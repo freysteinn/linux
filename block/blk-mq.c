@@ -221,6 +221,9 @@ static void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
 	rq->end_io = NULL;
 	rq->end_io_data = NULL;
 	rq->next_rq = NULL;
+#if CONFIG_BLK_DEV_NVM
+	rq->phys_sector = 0;
+#endif
 
 	ctx->rq_dispatched[rw_is_sync(rw_flags)]++;
 }
@@ -838,7 +841,7 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		case BLK_MQ_RQ_QUEUE_DONE:
 			continue;
 		case BLK_MQ_RQ_QUEUE_BUSY:
-			list_add(&rq->queuelist, &rq_list);
+			list_add_tail(&rq->queuelist, &rq_list);
 			__blk_mq_requeue_request(rq);
 			break;
 		default:
@@ -1445,6 +1448,7 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 	struct blk_mq_tags *tags;
 	unsigned int i, j, entries_per_page, max_order = 4;
 	size_t rq_size, left;
+	unsigned int cmd_size = set->cmd_size;
 
 	tags = blk_mq_init_tags(set->queue_depth, set->reserved_tags,
 				set->numa_node,
@@ -1462,11 +1466,14 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 		return NULL;
 	}
 
+	if (set->flags & BLK_MQ_F_NVM)
+		cmd_size += sizeof(struct nvm_per_rq);
+
 	/*
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + set->cmd_size,
+	rq_size = round_up(sizeof(struct request) + cmd_size,
 				cache_line_size());
 	left = rq_size * set->queue_depth;
 
@@ -1977,6 +1984,9 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_tag_set *set)
 
 	if (!(set->flags & BLK_MQ_F_SG_MERGE))
 		q->queue_flags |= 1 << QUEUE_FLAG_NO_SG_MERGE;
+
+	if (set->flags & BLK_MQ_F_NVM)
+		q->queue_flags |= 1 << QUEUE_FLAG_NVM;
 
 	q->sg_reserved_size = INT_MAX;
 

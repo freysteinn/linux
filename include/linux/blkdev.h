@@ -209,6 +209,9 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
+#if CONFIG_BLK_DEV_NVM
+	sector_t phys_sector;
+#endif
 };
 
 static inline unsigned short req_get_ioprio(struct request *req)
@@ -308,6 +311,10 @@ struct queue_limits {
 	unsigned char		discard_zeroes_data;
 	unsigned char		raid_partial_stripes_expensive;
 };
+
+#ifdef CONFIG_BLK_DEV_NVM
+struct nvm_dev;
+#endif
 
 struct request_queue {
 	/*
@@ -455,6 +462,9 @@ struct request_queue {
 #ifdef CONFIG_BLK_DEV_IO_TRACE
 	struct blk_trace	*blk_trace;
 #endif
+#ifdef CONFIG_BLK_DEV_NVM
+	struct nvm_dev *nvm;
+#endif
 	/*
 	 * for flush operations
 	 */
@@ -513,6 +523,7 @@ struct request_queue {
 #define QUEUE_FLAG_INIT_DONE   20	/* queue is initialized */
 #define QUEUE_FLAG_NO_SG_MERGE 21	/* don't attempt to merge SG segments*/
 #define QUEUE_FLAG_SG_GAPS     22	/* queue doesn't support SG gaps */
+#define QUEUE_FLAG_NVM         23	/* open-channel SSD managed queue */
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -601,6 +612,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_queue_discard(q)	test_bit(QUEUE_FLAG_DISCARD, &(q)->queue_flags)
 #define blk_queue_secdiscard(q)	(blk_queue_discard(q) && \
 	test_bit(QUEUE_FLAG_SECDISCARD, &(q)->queue_flags))
+#define blk_queue_nvm(q)	test_bit(QUEUE_FLAG_NVM, &(q)->queue_flags)
 
 #define blk_noretry_request(rq) \
 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
@@ -822,6 +834,7 @@ extern int sg_scsi_ioctl(struct request_queue *, struct gendisk *, fmode_t,
 			 struct scsi_ioctl_command __user *);
 
 extern void blk_queue_bio(struct request_queue *q, struct bio *bio);
+extern void blk_init_request_from_bio(struct request *req, struct bio *bio);
 
 /*
  * A queue has just exitted congestion.  Note this in the global counter of
@@ -900,6 +913,11 @@ static inline unsigned int blk_rq_sectors(const struct request *rq)
 static inline unsigned int blk_rq_cur_sectors(const struct request *rq)
 {
 	return blk_rq_cur_bytes(rq) >> 9;
+}
+
+static inline sector_t blk_rq_phys_pos(const struct request *rq)
+{
+	return rq->phys_sector;
 }
 
 static inline unsigned int blk_queue_get_max_sectors(struct request_queue *q,
@@ -1504,6 +1522,8 @@ extern bool blk_integrity_merge_bio(struct request_queue *, struct request *,
 static inline
 struct blk_integrity *bdev_get_integrity(struct block_device *bdev)
 {
+	if (unlikely(!bdev))
+		return NULL;
 	return bdev->bd_disk->integrity;
 }
 
@@ -1597,6 +1617,207 @@ static inline bool blk_integrity_is_initialized(struct gendisk *g)
 }
 
 #endif /* CONFIG_BLK_DEV_INTEGRITY */
+
+#ifdef CONFIG_BLK_DEV_NVM
+
+#include <uapi/linux/nvm.h>
+
+typedef int (nvm_l2p_update_fn)(u64, u64, u64 *, void *);
+typedef int (nvm_id_fn)(struct request_queue *, struct nvm_id *);
+typedef int (nvm_get_features_fn)(struct request_queue *,
+				  struct nvm_get_features *);
+typedef int (nvm_set_rsp_fn)(struct request_queue *, u64);
+typedef int (nvm_get_l2p_tbl_fn)(struct request_queue *, u64, u64,
+				 nvm_l2p_update_fn *, void *);
+typedef int (nvm_erase_blk_fn)(struct request_queue *, sector_t);
+
+struct nvm_dev_ops {
+	nvm_id_fn		*identify;
+	nvm_get_features_fn	*get_features;
+	nvm_set_rsp_fn		*set_responsibility;
+	nvm_get_l2p_tbl_fn	*get_l2p_tbl;
+
+	nvm_erase_blk_fn	*erase_block;
+};
+
+struct nvm_blocks;
+
+/*
+ * We assume that the device exposes its channels as a linear address
+ * space. A lun therefore have a phy_addr_start and phy_addr_end that
+ * denotes the start and end. This abstraction is used to let the
+ * open-channel SSD (or any other device) expose its read/write/erase
+ * interface and be administrated by the host system.
+ */
+struct nvm_lun {
+	struct nvm_dev *dev;
+
+	/* lun block lists */
+	struct list_head used_list;	/* In-use blocks */
+	struct list_head free_list;	/* Not used blocks i.e. released
+					 *  and ready for use */
+
+	struct {
+		spinlock_t lock;
+	} ____cacheline_aligned_in_smp;
+
+	struct nvm_block *blocks;
+	struct nvm_id_chnl *chnl;
+
+	int id;
+	int reserved_blocks;
+
+	unsigned int nr_blocks;		/* end_block - start_block. */
+	unsigned int nr_free_blocks;	/* Number of unused blocks */
+
+	int nr_pages_per_blk;
+};
+
+struct nvm_block {
+	/* Management structures */
+	struct list_head list;
+	struct nvm_lun *lun;
+
+	spinlock_t lock;
+
+#define MAX_INVALID_PAGES_STORAGE 8
+	/* Bitmap for invalid page intries */
+	unsigned long invalid_pages[MAX_INVALID_PAGES_STORAGE];
+	/* points to the next writable page within a block */
+	unsigned int next_page;
+	/* number of pages that are invalid, wrt host page size */
+	unsigned int nr_invalid_pages;
+
+	unsigned int id;
+	int type;
+	/* Persistent data structures */
+	atomic_t data_cmnt_size; /* data pages committed to stable storage */
+};
+
+struct nvm_dev {
+	struct nvm_dev_ops *ops;
+	struct request_queue *q;
+
+	struct nvm_id identity;
+
+	struct list_head online_targets;
+
+	/* Open-channel SSD stores extra data after the private driver data */
+	unsigned int drv_cmd_size;
+
+	struct nvm_lun *luns;
+
+	/* Frequently used config variables */
+	/* FIXME: Replace with functions that get data from identity */
+	int nr_luns;
+	int nr_blks_per_lun;
+	int nr_pages_per_blk;
+	/* Calculated/Cached values. These do not reflect the actual usuable
+	 * blocks at run-time. */
+	unsigned long nr_pages;
+	unsigned long total_blocks;
+
+	uint32_t sector_size;
+
+};
+
+/* Logical to physical mapping */
+struct nvm_addr {
+	sector_t addr;
+	struct nvm_block *block;
+};
+
+/* Physical to logical mapping */
+struct nvm_rev_addr {
+	sector_t addr;
+};
+
+struct rrpc_inflight_rq {
+	struct list_head list;
+	sector_t l_start;
+	sector_t l_end;
+};
+
+struct nvm_per_rq {
+	struct rrpc_inflight_rq inflight_rq;
+	struct nvm_addr *addr;
+	unsigned int flags;
+};
+
+typedef void (nvm_tgt_make_rq)(struct request_queue *, struct bio *);
+typedef int (nvm_tgt_prep_rq)(struct request_queue *, struct request *);
+typedef void (nvm_tgt_unprep_rq)(struct request_queue *, struct request *);
+typedef sector_t (nvm_tgt_capacity)(void *);
+typedef void *(nvm_tgt_init_fn)(struct request_queue *, struct request_queue *,
+				struct gendisk *, struct gendisk *, int, int);
+typedef void (nvm_tgt_exit_fn)(void *);
+
+struct nvm_target_type {
+	const char *name;
+	unsigned int version[3];
+
+	/* target entry points */
+	nvm_tgt_make_rq *make_rq;
+	nvm_tgt_prep_rq *prep_rq;
+	nvm_tgt_unprep_rq *unprep_rq;
+	nvm_tgt_capacity *capacity;
+
+	/* module-specific init/teardown */
+	nvm_tgt_init_fn *init;
+	nvm_tgt_exit_fn *exit;
+
+	/* For open-channel SSD internal use */
+	struct list_head list;
+};
+
+extern struct nvm_target_type *nvm_find_target_type(const char *name);
+extern int nvm_register_target(struct nvm_target_type *tt);
+extern void nvm_unregister_target(struct nvm_target_type *tt);
+extern int blk_nvm_register(struct request_queue *,
+						struct nvm_dev_ops *);
+extern struct nvm_block *blk_nvm_get_blk(struct nvm_lun *, int);
+extern void blk_nvm_put_blk(struct nvm_block *block);
+extern int blk_nvm_erase_blk(struct nvm_dev *, struct nvm_block *);
+extern sector_t blk_nvm_alloc_addr(struct nvm_block *);
+static inline struct nvm_dev *blk_nvm_get_dev(struct request_queue *q)
+{
+	return q->nvm;
+}
+#else
+struct nvm_dev_ops;
+struct nvm_lun;
+struct nvm_block;
+struct nvm_target_type;
+
+struct nvm_target_type *nvm_find_target_type(const char *)
+{
+	return NULL;
+}
+int nvm_register_target(struct nvm_target_type *tt) { return -EINVAL; }
+void nvm_unregister_target(struct nvm_target_type *tt) {}
+static inline int blk_nvm_register(struct request_queue *,
+						struct nvm_dev_ops *)
+{
+	return -EINVAL;
+}
+static inline struct nvm_block *blk_nvm_get_blk(struct nvm_lun *, int)
+{
+	return NULL;
+}
+static inline void blk_nvm_put_blk(struct nvm_block *) {}
+static inline int blk_nvm_erase_blk(struct nvm_dev *, struct nvm_block *)
+{
+	return -EINVAL;
+}
+static inline int blk_nvm_get_dev(struct request_queue *)
+{
+	return NULL;
+}
+static inline sector_t blk_nvm_alloc_addr(struct nvm_block *block)
+{
+	return 0;
+}
+#endif /* CONFIG_BLK_DEV_NVM */
 
 struct block_device_operations {
 	int (*open) (struct block_device *, fmode_t);
