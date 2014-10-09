@@ -153,16 +153,17 @@ void nvm_setup_rq(struct nvm_stor *s, struct request *rq, struct nvm_addr *p,
 
 int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 {
+	sector_t npages = blk_rq_bytes(rq) / EXPOSED_PAGE_SIZE;
 	struct nvm_addr *p;
 	sector_t l_addr;
 
 	l_addr = blk_rq_pos(rq) / NR_PHY_IN_LOG;
 
-	nvm_lock_laddr_range(s, l_addr, 1);
+	nvm_lock_laddr_range(s, l_addr, npages);
 
 	p = s->type->lookup_ltop(s, l_addr);
 	if (!p) {
-		nvm_unlock_laddr_range(s, l_addr, 1);
+		nvm_unlock_laddr_range(s, l_addr, npages);
 		nvm_gc_kick(s);
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}
@@ -174,20 +175,22 @@ int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 		rq->__sector = 0;
 
 	nvm_setup_rq(s, rq, p, l_addr, NVM_RQ_NONE);
+	//printk("nvm: R{LBA:%llu,sec:%llu}\n", p->addr, p->addr * NR_PHY_IN_LOG);
 	return BLK_MQ_RQ_QUEUE_OK;
 }
 
 
 int __nvm_write_rq(struct nvm_stor *s, struct request *rq, int is_gc)
 {
-	struct nvm_addr *p;
+	sector_t npages =  blk_rq_bytes(rq) / EXPOSED_PAGE_SIZE;
 	sector_t l_addr = blk_rq_pos(rq) / NR_PHY_IN_LOG;
+	struct nvm_addr *p;
 
-	nvm_lock_laddr_range(s, l_addr, 1);
+	nvm_lock_laddr_range(s, l_addr, npages);
 	p = s->type->map_page(s, l_addr, is_gc);
 	if (!p) {
 		BUG_ON(is_gc);
-		nvm_unlock_laddr_range(s, l_addr, 1);
+		nvm_unlock_laddr_range(s, l_addr, npages);
 		nvm_gc_kick(s);
 
 		return BLK_MQ_RQ_QUEUE_BUSY;
