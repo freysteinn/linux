@@ -2572,6 +2572,8 @@ static void nvme_free_namespaces(struct nvme_dev *dev)
 	struct nvme_ns *ns, *next;
 
 	list_for_each_entry_safe(ns, next, &dev->namespaces, list) {
+		if (ns->nvm_dev)
+			nvm_exit(ns->nvm_dev);
 		list_del(&ns->list);
 		put_disk(ns->disk);
 		kfree(ns);
