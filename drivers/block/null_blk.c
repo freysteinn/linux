@@ -433,8 +433,10 @@ static void null_del_dev(struct nullb *nullb)
 	del_gendisk(nullb->disk);
 	blk_cleanup_queue(nullb->q);
 	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM)) {
-		if (queue_mode == NULL_Q_LIGHTNVM)
+		if (queue_mode == NULL_Q_LIGHTNVM) {
 			nvm_remove_sysfs(nullb->disk->private_data);
+			nvm_exit(nullb->nvm_dev);
+		}
 		blk_mq_free_tag_set(&nullb->tag_set);
 	}
 	put_disk(nullb->disk);
