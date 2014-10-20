@@ -150,7 +150,7 @@ static void nvm_pools_free(struct nvm_stor *s)
 	nvm_for_each_pool(s, pool, i) {
 		if (!pool->blocks)
 			break;
-		kfree(pool->blocks);
+		vfree(pool->blocks);
 	}
 	kfree(s->pools);
 	kfree(s->aps);
@@ -509,8 +509,9 @@ void nvm_exit(struct nvm_dev *dev)
 
 	kmem_cache_destroy(_addr_cache);
 
-	pr_info("lightnvm: successfully unloaded");
+	pr_info("lightnvm: successfully unloaded\n");
 }
+EXPORT_SYMBOL_GPL(nvm_exit);
 
 int nvm_ioctl(struct nvm_dev *dev, fmode_t mode, unsigned int cmd,
 							unsigned long arg)
