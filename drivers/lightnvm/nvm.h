@@ -341,8 +341,6 @@ struct nvm_stor {
 	unsigned long nr_pages;
 	unsigned long total_blocks;
 
-	unsigned int next_collect_pool;
-
 	/* Write strategy variables. Move these into each for structure for each
 	 * strategy */
 	atomic_t next_write_ap; /* Whenever a page is written, this is updated

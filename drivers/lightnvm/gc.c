@@ -166,7 +166,7 @@ void nvm_gc_collect(struct work_struct *work)
 	unsigned int nr_blocks_need;
 	unsigned long flags;
 
-	nr_blocks_need = pool->nr_blocks / 10;
+	nr_blocks_need = pool->nr_blocks / GC_LIMIT_INVERSE;
 
 	if (nr_blocks_need < s->nr_aps)
 		nr_blocks_need = s->nr_aps;
@@ -193,7 +193,6 @@ void nvm_gc_collect(struct work_struct *work)
 		nr_blocks_need--;
 	}
 	spin_unlock(&pool->lock);
-	s->next_collect_pool++;
 	local_irq_restore(flags);
 
 	/* TODO: Hint that request queue can be started again */
