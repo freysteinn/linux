@@ -60,39 +60,6 @@
 #define NVM_INFLIGHT_PARTITIONS 8
 #define NVM_INFLIGHT_TAGS 256
 
-#define NVM_OPT_MISC_OFFSET 15
-
-enum ltop_flags {
-	/* Update primary mapping (and init secondary mapping as a result) */
-	MAP_PRIMARY	= 1 << 0,
-	/* Update only shaddow mapping */
-	MAP_SHADOW	= 1 << 1,
-	/* Update only the relevant mapping (primary/shaddow) */
-	MAP_SINGLE	= 1 << 2,
-};
-
-enum target_flags {
-	/* No hints applied */
-	NVM_OPT_ENGINE_NONE		= 0 <<  0,
-	/* Swap aware hints. Detected from block request type */
-	NVM_OPT_ENGINE_SWAP		= 1 <<  0,
-	/* IOCTL aware hints. Applications may submit direct hints */
-	NVM_OPT_ENGINE_IOCTL	= 1 <<  1,
-	/* Latency aware hints. Detected from file type or directly from app */
-	NVM_OPT_ENGINE_LATENCY	= 1 <<  2,
-	/* Pack aware hints. Detected from file type or directly from app */
-	NVM_OPT_ENGINE_PACK	= 1 <<  3,
-
-	/* Control accesses to append points in the host. Enable this for
-	 * devices that doesn't have an internal queue that only lets one
-	 * command run at a time within an append point */
-	NVM_OPT_POOL_SERIALIZE	= 1 << NVM_OPT_MISC_OFFSET,
-	/* Use fast/slow page access pattern */
-	NVM_OPT_FAST_SLOW_PAGES	= 1 << (NVM_OPT_MISC_OFFSET+1),
-	/* Disable dev waits */
-	NVM_OPT_NO_WAITS	= 1 << (NVM_OPT_MISC_OFFSET+2),
-};
-
 /* Pool descriptions */
 struct nvm_block {
 	struct {
