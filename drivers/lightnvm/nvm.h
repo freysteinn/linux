@@ -518,7 +518,7 @@ retry:
 
 	list_add_tail(&r->list, &inflight->reqs);
 	spin_unlock_irqrestore(&inflight->lock, flags);
-	printk("%s: \tlocked sgmt_range{start:%zu, end:%zu}\n", __FUNCTION__, r->l_start, r->l_end);
+	/*pr_debug("%s: \tlocked sgmt_range{start:%zu, end:%zu}\n", __func__, r->l_start, r->l_end);*/
 }
 
 static inline unsigned incr_iflight_ndx(unsigned curr_ndx)
