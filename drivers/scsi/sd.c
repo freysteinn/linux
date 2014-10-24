@@ -53,7 +53,6 @@
 #include <linux/pm_runtime.h>
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
-#include <linux/lightnvm.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
@@ -1326,12 +1325,6 @@ static int sd_ioctl(struct block_device *bdev, fmode_t mode,
 					(mode & FMODE_NDELAY) != 0);
 	if (!scsi_block_when_processing_errors(sdp) || !error)
 		goto out;
-
-	if (sdp->nvm_dev) {
-		error = nvm_ioctl(sdp->nvm_dev, mode, cmd, arg);
-		if (error != -ENOTTY)
-			goto out;
-	}
 
 	/*
 	 * Send SCSI addressing ioctls directly to mid level, send other
@@ -2884,60 +2877,6 @@ static int sd_format_disk_name(char *prefix, int index, char *buf, int buflen)
 	return 0;
 }
 
-static int scsi_nvm_id(struct nvm_dev *dev, struct nvm_id *nvm_id)
-{
-	nvm_id->ver_id = 0x2;
-	nvm_id->nvm_type = NVM_NVMT_BLK;
-	nvm_id->nchannels = 8;
-	return 0;
-}
-
-static int scsi_nvm_id_chnl(struct nvm_dev *dev, int chnl_num,
-							struct nvm_id_chnl *ic)
-{
-	const ulong NVM_PAGES_PER_BLOCK = 128;
-	const ulong NVM_BLOCK_PER_BANK = 4096;
-	const ulong NVM_NUM_BANKS = 4;
-	const ulong NVM_SECTORS_PER_PAGE = 32;
-
-	ic->queue_size = 32;
-	ic->gran_read = NVM_SECTORS_PER_PAGE << 9;
-	ic->gran_write = NVM_SECTORS_PER_PAGE << 9;
-	ic->gran_erase = (NVM_SECTORS_PER_PAGE * NVM_PAGES_PER_BLOCK) << 9;
-	ic->oob_size = 0;
-	ic->t_r = ic->t_sqr = 25000; /* 25us */
-	ic->t_w = ic->t_sqw = 500000; /* 500us */
-	ic->t_e = 1500000; /* 1.500us */
-	ic->io_sched = NVM_IOSCHED_CHANNEL;
-	ic->laddr_begin = 0;
-	ic->laddr_end = (NVM_SECTORS_PER_PAGE *
-			 NVM_PAGES_PER_BLOCK *
-			 NVM_BLOCK_PER_BANK *
-			 NVM_NUM_BANKS * 1024);
-	return 0;
-}
-
-static int scsi_nvm_get_features(struct nvm_dev *dev,
-						struct nvm_get_features *gf)
-{
-	gf->rsp[0] = (1 << NVM_RSP_L2P);
-	gf->rsp[0] |= (1 << NVM_RSP_P2L);
-	gf->rsp[0] |= (1 << NVM_RSP_GC);
-	return 0;
-}
-
-static int scsi_nvm_set_rsp(struct nvm_dev *dev, u8 rsp, u8 val)
-{
-	return NVM_RID_NOT_CHANGEABLE | NVM_DNR;
-}
-
-static struct lightnvm_dev_ops scsi_nvm_dev_ops = {
-	.identify		= scsi_nvm_id,
-	.identify_channel	= scsi_nvm_id_chnl,
-	.get_features		= scsi_nvm_get_features,
-	.set_responsibility	= scsi_nvm_set_rsp,
-};
-
 /*
  * The asynchronous part of sd_probe
  */
@@ -2948,7 +2887,6 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	struct gendisk *gd;
 	u32 index;
 	struct device *dev;
-	struct nvm_dev *nvm_dev;
 
 	sdp = sdkp->device;
 	gd = sdkp->disk;
@@ -2985,46 +2923,11 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	}
 
 	blk_pm_runtime_init(sdp->request_queue, dev);
-
-	if (sdp->use_lightnvm) {
-		nvm_dev = nvm_alloc();
-		if (nvm_dev) {
-			nvm_dev->ops = &scsi_nvm_dev_ops;
-			nvm_dev->drv_cmd_size = sdp->host->tag_set.cmd_size -
-								nvm_cmd_size();
-			nvm_dev->q = sdkp->device->request_queue;
-			nvm_dev->disk = gd;
-
-			sdp->nvm_dev = nvm_dev;
-
-			if (nvm_init(gd, sdp->nvm_dev))
-				sd_printk(KERN_NOTICE, sdkp,
-					"Failed LightNVM initialization\n");
-			blk_queue_max_hw_sectors(sdp->nvm_dev->q, 4096);
-			blk_queue_physical_block_size(sdp->nvm_dev->q, 4096);
-			blk_queue_logical_block_size(sdp->nvm_dev->q, 4096);
-			blk_queue_io_min(sdp->nvm_dev->q, 4096);
-			blk_queue_io_opt(sdp->nvm_dev->q, 4096);
-			blk_queue_chunk_sectors(sdp->nvm_dev->q, 8);
-		}
-
-	}
 	add_disk(gd);
-	if (sdp->use_lightnvm)
-		nvm_add_sysfs(sdp->nvm_dev);
 	if (sdkp->capacity)
 		sd_dif_config_host(sdkp);
 
 	sd_revalidate_disk(gd);
-
-	if (sdp->use_lightnvm) {
-		blk_queue_max_hw_sectors(sdp->nvm_dev->q, 4096);
-		blk_queue_physical_block_size(sdp->nvm_dev->q, 4096);
-		blk_queue_logical_block_size(sdp->nvm_dev->q, 4096);
-		blk_queue_io_min(sdp->nvm_dev->q, 4096);
-		blk_queue_io_opt(sdp->nvm_dev->q, 4096);
-		blk_queue_chunk_sectors(sdp->nvm_dev->q, 8);
-	}
 
 	sd_printk(KERN_NOTICE, sdkp, "Attached SCSI %sdisk\n",
 		  sdp->removable ? "removable " : "");
@@ -3186,17 +3089,11 @@ static int sd_remove(struct device *dev)
 static void scsi_disk_release(struct device *dev)
 {
 	struct scsi_disk *sdkp = to_scsi_disk(dev);
-	struct scsi_device *sdp = sdkp->device;
 	struct gendisk *disk = sdkp->disk;
-
+	
 	spin_lock(&sd_index_lock);
 	ida_remove(&sd_index_ida, sdkp->index);
 	spin_unlock(&sd_index_lock);
-
-	if (sdp->use_lightnvm) {
-		nvm_remove_sysfs(sdp->nvm_dev);
-		nvm_free(sdp->nvm_dev);
-	}
 
 	disk->private_data = NULL;
 	put_disk(disk);
