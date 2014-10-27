@@ -175,7 +175,7 @@ static int nvm_pools_init(struct nvm_stor *s)
 
 		init_completion(&pool->gc_finished);
 
-		INIT_WORK(&pool->gc_ws, nvm_gc_collect);
+		INIT_WORK(&pool->ws_gc, nvm_gc_collect);
 
 		INIT_LIST_HEAD(&pool->free_list);
 		INIT_LIST_HEAD(&pool->used_list);

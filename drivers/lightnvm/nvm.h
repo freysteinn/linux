@@ -136,7 +136,7 @@ struct nvm_pool {
 
 	unsigned int gc_running;
 	struct completion gc_finished;
-	struct work_struct gc_ws;
+	struct work_struct ws_gc;
 
 	void *private;
 };

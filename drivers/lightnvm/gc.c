@@ -8,7 +8,7 @@ static void queue_pool_gc(struct nvm_pool *pool)
 {
 	struct nvm_stor *s = pool->s;
 
-	queue_work(s->krqd_wq, &pool->gc_ws);
+	queue_work(s->krqd_wq, &pool->ws_gc);
 }
 
 void nvm_gc_cb(unsigned long data)
@@ -160,7 +160,7 @@ overwritten:
 
 void nvm_gc_collect(struct work_struct *work)
 {
-	struct nvm_pool *pool = container_of(work, struct nvm_pool, gc_ws);
+	struct nvm_pool *pool = container_of(work, struct nvm_pool, ws_gc);
 	struct nvm_stor *s = pool->s;
 	struct nvm_block *block;
 	unsigned int nr_blocks_need;
