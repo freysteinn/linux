@@ -304,6 +304,10 @@ struct queue_limits {
 	unsigned char		raid_partial_stripes_expensive;
 };
 
+#ifdef CONFIG_LIGHTNVM
+#include <linux/lightnvm.h>
+#endif
+
 struct request_queue {
 	/*
 	 * Together with queue_head for cacheline sharing
@@ -449,6 +453,9 @@ struct request_queue {
 	int			node;
 #ifdef CONFIG_BLK_DEV_IO_TRACE
 	struct blk_trace	*blk_trace;
+#endif
+#ifdef CONFIG_LIGHTNVM
+	struct nvm_dev *nvm;
 #endif
 	/*
 	 * for flush operations
