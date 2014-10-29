@@ -619,40 +619,5 @@ static inline void nvm_unlock_laddr_range(struct nvm_stor *s, sector_t laddr,
 		inflight = &s->inflight_map[map_ndx];
 	}
 }
-
-static inline void __show_pool(struct nvm_pool *pool)
-{
-	struct list_head *head, *cur;
-	unsigned int free_cnt = 0, used_cnt = 0, prio_cnt = 0;
-
-	NVM_ASSERT(spin_is_locked(&pool->lock));
-
-	list_for_each_safe(head, cur, &pool->free_list)
-		free_cnt++;
-	list_for_each_safe(head, cur, &pool->used_list)
-		used_cnt++;
-	list_for_each_safe(head, cur, &pool->prio_list)
-		prio_cnt++;
-
-	pr_err("lightnvm: P-%d F:%u U:%u P:%u",
-					pool->id, free_cnt, used_cnt, prio_cnt);
-}
-
-static inline void show_pool(struct nvm_pool *pool)
-{
-	spin_lock(&pool->lock);
-	__show_pool(pool);
-	spin_unlock(&pool->lock);
-}
-
-static inline void show_all_pools(struct nvm_stor *s)
-{
-	struct nvm_pool *pool;
-	unsigned int i;
-
-	nvm_for_each_pool(s, pool, i)
-		show_pool(pool);
-}
-
 #endif /* NVM_H_ */
 

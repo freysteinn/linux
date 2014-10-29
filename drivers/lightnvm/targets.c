@@ -22,7 +22,6 @@ struct nvm_block *nvm_pool_get_block(struct nvm_pool *pool, int is_gc)
 
 	if (list_empty(&pool->free_list)) {
 		pr_err_ratelimited("Pool have no free pages available");
-		__show_pool(pool);
 		spin_unlock_irqrestore(&pool->lock, flags);
 		goto out;
 	}
@@ -179,7 +178,6 @@ static struct nvm_addr *nvm_map_page_rr(struct nvm_stor *s, sector_t l_addr,
 					ap->gc_cur = p_block;
 					ap->gc_cur->ap = ap;
 					if (!p_block) {
-						show_all_pools(ap->parent);
 						pr_err("nvm: no more blocks");
 						goto finished;
 					} else {

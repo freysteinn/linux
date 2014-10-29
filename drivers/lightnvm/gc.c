@@ -178,7 +178,6 @@ void nvm_gc_collect(struct work_struct *work)
 		block = block_prio_find_max(pool);
 
 		if (!block->nr_invalid_pages) {
-			__show_pool(pool);
 			pr_err("No invalid pages");
 			break;
 		}
