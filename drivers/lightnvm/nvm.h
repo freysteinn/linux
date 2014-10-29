@@ -111,7 +111,6 @@ struct nvm_pool {
 	struct list_head used_list;	/* In-use blocks */
 	struct list_head free_list;	/* Not used blocks i.e. released
 					 *  and ready for use */
-	struct list_head prio_list;	/* Blocks that may be GC'ed. */
 
 	unsigned int id;
 	/* References the physical start block */
@@ -135,10 +134,10 @@ struct nvm_pool {
 	struct bio *cur_bio;
 
 	unsigned int gc_running;
-	struct completion gc_finished;
 	struct work_struct ws_gc;
 
-	void *private;
+	void *tgt_private;	/*target-specific per-pool data*/
+	void *gc_private;	/*GC-specific per-pool data*/
 };
 
 /*
@@ -208,15 +207,21 @@ typedef struct nvm_block *(*nvm_pool_get_blk_fn)(struct nvm_pool *pool,
 typedef void (*nvm_pool_put_blk_fn)(struct nvm_block *block);
 typedef int (*nvm_ioctl_fn)(struct nvm_stor *,
 					unsigned int cmd, unsigned long arg);
-typedef int (*nvm_init_fn)(struct nvm_stor *);
-typedef void (*nvm_exit_fn)(struct nvm_stor *);
+typedef int (*nvm_tgt_init_fn)(struct nvm_stor *);
+typedef void (*nvm_tgt_exit_fn)(struct nvm_stor *);
 typedef void (*nvm_endio_fn)(struct nvm_stor *, struct request *,
 				struct per_rq_data *, unsigned long *delay);
+
+typedef void (*nvm_gc_on_gc_time_fn)(unsigned long s_addr); /*TODO: can't we do better ?*/
+typedef void (*nvm_gc_queue_fn)(struct nvm_block *block);
+typedef void (*nvm_gc_reclaim_fn)(struct nvm_block *block);
+typedef void (*nvm_gc_kick_fn)(struct nvm_stor *s);
+typedef int (*nvm_gc_init_fn)(struct nvm_stor *s);
+typedef void (*nvm_gc_exit_fn)(struct nvm_stor *s);
 
 struct nvm_target_type {
 	const char *name;
 	unsigned int version[3];
-	unsigned int per_rq_size;
 
 	/* lookup functions */
 	nvm_lookup_ltop_fn lookup_ltop;
@@ -233,12 +238,27 @@ struct nvm_target_type {
 	nvm_map_ltop_page_fn map_page;
 	nvm_map_ltop_block_fn map_block;
 
-	/* module specific init/teardown */
-	nvm_init_fn init;
-	nvm_exit_fn exit;
+	/* module-specific init/teardown */
+	nvm_tgt_init_fn init;
+	nvm_tgt_exit_fn exit;
 
 	/* For lightnvm internal use */
 	struct list_head list;
+};
+
+struct nvm_gc_type {
+	const char *name;
+	unsigned int version[3];
+
+	/*GC interface*/
+	nvm_gc_on_gc_time_fn on_gc_time;
+	nvm_gc_queue_fn queue;
+	nvm_gc_reclaim_fn reclaim;
+	nvm_gc_kick_fn kick;
+
+	/* module-specific init/teardown */
+	nvm_gc_init_fn init;
+	nvm_gc_exit_fn exit;
 };
 
 struct kv_entry;
@@ -267,6 +287,7 @@ struct nvm_stor {
 	uint32_t sector_size;
 
 	struct nvm_target_type *type;
+	struct nvm_gc_type *gc_ops;
 
 	/* Simple translation map of logical addresses to physical addresses.
 	 * The logical addresses is known by the host system, while the physical

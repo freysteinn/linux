@@ -4,6 +4,15 @@
 /* Run only GC if less than 1/X blocks are free */
 #define GC_LIMIT_INVERSE 10
 
+struct greedy_data {
+	struct list_head prio_list;		/* Blocks that may be GC'ed */
+};
+
+static inline struct greedy_data *greedy_data(struct nvm_pool *pool)
+{
+	return (struct greedy_data *)pool->gc_private;
+}
+
 static void queue_pool_gc(struct nvm_pool *pool)
 {
 	struct nvm_stor *s = pool->s;
@@ -41,13 +50,14 @@ static struct nvm_block *block_max_invalid(struct nvm_block *a,
  * requires pool->lock */
 static struct nvm_block *block_prio_find_max(struct nvm_pool *pool)
 {
-	struct list_head *list = &pool->prio_list;
+	struct greedy_data *gc_data = greedy_data(pool);
+	struct list_head *prio_list = &gc_data->prio_list;
 	struct nvm_block *block, *max;
 
-	BUG_ON(list_empty(list));
+	BUG_ON(list_empty(prio_list));
 
-	max = list_first_entry(list, struct nvm_block, prio);
-	list_for_each_entry(block, list, prio)
+	max = list_first_entry(prio_list, struct nvm_block, prio);
+	list_for_each_entry(block, prio_list, prio)
 		max = block_max_invalid(max, block);
 
 	return max;
@@ -158,9 +168,11 @@ overwritten:
 	WARN_ON(!bitmap_full(block->invalid_pages, s->nr_pages_per_blk));
 }
 
-void nvm_gc_collect(struct work_struct *work)
+static void nvm_greedy_collect(struct work_struct *work)
 {
 	struct nvm_pool *pool = container_of(work, struct nvm_pool, ws_gc);
+	struct greedy_data *gc_data = greedy_data(pool);
+	struct list_head *prio_list = &gc_data->prio_list;
 	struct nvm_stor *s = pool->s;
 	struct nvm_block *block;
 	unsigned int nr_blocks_need;
@@ -174,7 +186,7 @@ void nvm_gc_collect(struct work_struct *work)
 	local_irq_save(flags);
 	spin_lock(&pool->lock);
 	while (nr_blocks_need > pool->nr_free_blocks &&
-						!list_empty(&pool->prio_list)) {
+						!list_empty(prio_list)) {
 		block = block_prio_find_max(pool);
 
 		if (!block->nr_invalid_pages) {
@@ -209,13 +221,15 @@ void nvm_gc_block(struct work_struct *work)
 	s->type->pool_put_blk(block);
 }
 
+/*nvm_gc_recycle_block*/
 void nvm_gc_recycle_block(struct work_struct *work)
 {
 	struct nvm_block *block = container_of(work, struct nvm_block, ws_eio);
 	struct nvm_pool *pool = block->pool;
+	struct greedy_data *gc_data = greedy_data(pool);
 
 	spin_lock(&pool->lock);
-	list_add_tail(&block->prio, &pool->prio_list);
+	list_add_tail(&block->prio, &gc_data->prio_list);
 	spin_unlock(&pool->lock);
 }
 
@@ -229,3 +243,56 @@ void nvm_gc_kick(struct nvm_stor *s)
 	nvm_for_each_pool(s, pool, i)
 		queue_pool_gc(pool);
 }
+
+static void nvm_greedy_queue(struct nvm_block *b)
+{
+	/*Consider block reclaim-able, add to relevant data structures for future GC'ing*/
+}
+
+static void nvm_greedy_reclaim(struct nvm_block *b)
+{
+	/*Block has been selected as victim, migrate live data and GC*/
+}
+
+static int nvm_gc_init(struct nvm_stor *s)
+{
+	/*set s->gc_private if need be*/
+	struct nvm_pool *pool;
+	struct greedy_data *pool_data;
+	int i;
+
+	pool_data = kcalloc(s->nr_pools, sizeof(struct greedy_data),
+						GFP_KERNEL);
+	if (!pool_data)
+		goto alloc_err;
+
+	nvm_for_each_pool(s, pool, i) {
+		struct greedy_data *gc_data = &pool_data[i];
+		INIT_WORK(&pool->ws_gc, nvm_greedy_collect);
+		pool->gc_private = gc_data;
+		INIT_LIST_HEAD(&gc_data->prio_list);
+	}
+
+	return 0;
+alloc_err:
+	return -1;
+}
+
+static void nvm_gc_exit(struct nvm_stor *s)
+{
+	/*All per-pool GC-data space was allocated in one go, so this suffices*/
+	kfree(s->pools[0].gc_private);
+}
+
+struct nvm_gc_type nvm_gc_greedy = {
+	.name 		= "greedy",
+	.version 	= {1, 0, 0},
+
+	.on_gc_time	= nvm_gc_cb,
+	.queue		= nvm_greedy_queue,
+	.reclaim	= nvm_greedy_reclaim,
+	.kick		= nvm_gc_kick,
+
+	.init		= nvm_gc_init,
+	.exit		= nvm_gc_exit,
+};

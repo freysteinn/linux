@@ -39,6 +39,7 @@
 #define MIN_POOL_PAGES 16
 
 extern struct nvm_target_type nvm_target_rrpc;
+extern struct nvm_gc_type nvm_gc_greedy;
 
 static struct kmem_cache *_addr_cache;
 
@@ -158,13 +159,8 @@ static int nvm_pools_init(struct nvm_stor *s)
 		spin_lock_init(&pool->lock);
 		spin_lock_init(&pool->waiting_lock);
 
-		init_completion(&pool->gc_finished);
-
-		INIT_WORK(&pool->ws_gc, nvm_gc_collect);
-
 		INIT_LIST_HEAD(&pool->free_list);
 		INIT_LIST_HEAD(&pool->used_list);
-		INIT_LIST_HEAD(&pool->prio_list);
 
 		pool->id = i;
 		pool->s = s;
@@ -288,14 +284,19 @@ static int nvm_stor_init(struct nvm_dev *dev, struct nvm_stor *s)
 	nvm_pools_init(s);
 
 	if (s->type->init && s->type->init(s))
-		goto err_addr_pool;
+		goto err_addr_pool_tgt;
+
+	if (s->gc_ops->init && s->gc_ops->init(s))
+		goto err_addr_pool_gc;
 
 	/* FIXME: Clean up pool init on failure. */
 	setup_timer(&s->gc_timer, nvm_gc_cb, (unsigned long)s);
 	mod_timer(&s->gc_timer, jiffies + msecs_to_jiffies(1000));
 
 	return 0;
-err_addr_pool:
+err_addr_pool_gc:
+	s->type->exit(s);
+err_addr_pool_tgt:
 	nvm_pools_free(s);
 	mempool_destroy(s->addr_pool);
 err_page_pool:
@@ -308,6 +309,7 @@ err_rev_trans_map:
 }
 
 #define NVM_TARGET_TYPE "rrpc"
+#define NVM_GC_TYPE "greedy"
 #define NVM_NUM_POOLS 8
 #define NVM_NUM_BLOCKS 256
 #define NVM_NUM_PAGES 256
@@ -369,12 +371,19 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	if (!s->type) {
 		pr_err("nvm: %s doesn't exist.", NVM_TARGET_TYPE);
 		ret = -EINVAL;
-		goto err_target;
+		goto err_cfg;
+	}
+
+	s->gc_ops = &nvm_gc_greedy;
+	if (!s->gc_ops) {
+		pr_err("nvm: %s doesn't exist.", NVM_GC_TYPE);
+		ret = -EINVAL;
+		goto err_cfg;
 	}
 
 	if (nvm->ops->identify(q, &nvm_id)) {
 		ret = -EINVAL;
-		goto err_target;
+		goto err_cfg;
 	}
 
 	s->nr_pools = nvm_id.nchannels;
@@ -382,7 +391,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	/* TODO: We're limited to the same setup for each channel */
 	if (nvm->ops->identify_channel(q, 0, nvm_id_chnl)) {
 		ret = -EINVAL;
-		goto err_target;
+		goto err_cfg;
 	}
 
 	s->gran_blk = le64_to_cpu(nvm_id_chnl->gran_erase);
@@ -411,13 +420,13 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	ret = nvmkv_init(s, size);
 	if (ret) {
 		pr_err("lightnvm: kv init failed.\n");
-		goto err_target;
+		goto err_cfg;
 	}
 
 	if (s->nr_pages_per_blk > MAX_INVALID_PAGES_STORAGE * BITS_PER_LONG) {
 		pr_err("lightnvm: Num. pages per block too high. Increase MAX_INVALID_PAGES_STORAGE.");
 		ret = -EINVAL;
-		goto err_target;
+		goto err_cfg;
 	}
 
 	ret = nvm_stor_init(nvm, s);
@@ -447,7 +456,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 
 err_map:
 	nvmkv_exit(s);
-err_target:
+err_cfg:
 	kfree(s);
 err_stor:
 	kmem_cache_destroy(_addr_cache);
@@ -470,6 +479,9 @@ void nvm_exit(struct request_queue *q)
 	s = nvm->stor;
 	if (!s)
 		return;
+
+	if (s->gc_ops->exit)
+		s->gc_ops->exit(s);
 
 	if (s->type->exit)
 		s->type->exit(s);
