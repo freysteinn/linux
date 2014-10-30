@@ -7,6 +7,7 @@
 #include <linux/backing-dev.h>
 #include <linux/fs.h>
 #include <linux/blktrace_api.h>
+#include <linux/lightnvm.h>
 #include <asm/uaccess.h>
 
 static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
@@ -426,6 +427,8 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKTRACETEARDOWN:
 		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
 		break;
+	case LIGHTNVM_IOCTL_KV:
+		ret = blk_lightnvm_ioctl_kv(bdev, cmd, (char __user *) arg);
 	default:
 		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
 	}

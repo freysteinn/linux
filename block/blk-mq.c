@@ -20,6 +20,7 @@
 #include <linux/cache.h>
 #include <linux/sched/sysctl.h>
 #include <linux/delay.h>
+#include <linux/lightnvm.h>
 
 #include <trace/events/block.h>
 
@@ -307,6 +308,11 @@ void blk_mq_clone_flush_request(struct request *flush_rq,
 
 inline void __blk_mq_end_io(struct request *rq, int error)
 {
+	struct request_queue *q = rq->q;
+
+	if (blk_queue_lightnvm(q))
+		nvm_complete_request(q->nvm, rq, error);
+
 	blk_account_io_done(rq);
 
 	if (rq->end_io) {
@@ -1082,10 +1088,15 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 
 static void blk_mq_bio_to_request(struct request *rq, struct bio *bio)
 {
+	struct request_queue *q = rq->q;
+
 	init_request_from_bio(rq, bio);
 
 	if (blk_do_io_stat(rq))
 		blk_account_io_start(rq, 1);
+
+	if (blk_queue_lightnvm(q))
+		blk_lightnvm_map(q->nvm, rq);
 }
 
 static inline bool hctx_allow_merges(struct blk_mq_hw_ctx *hctx)
@@ -1361,6 +1372,7 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 	struct blk_mq_tags *tags;
 	unsigned int i, j, entries_per_page, max_order = 4;
 	size_t rq_size, left;
+	unsigned int cmd_size = set->cmd_size;
 
 	tags = blk_mq_init_tags(set->queue_depth, set->reserved_tags,
 				set->numa_node);
@@ -1377,11 +1389,14 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 		return NULL;
 	}
 
+	if (set->flags & BLK_MQ_F_LIGHTNVM)
+		cmd_size += nvm_cmd_size();
+
 	/*
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + set->cmd_size,
+	rq_size = round_up(sizeof(struct request) + cmd_size,
 				cache_line_size());
 	left = rq_size * set->queue_depth;
 
@@ -1597,7 +1612,10 @@ static int blk_mq_init_hw_queues(struct request_queue *q,
 		hctx->queue = q;
 		hctx->queue_num = i;
 		hctx->flags = set->flags;
-		hctx->cmd_size = set->cmd_size;
+		if (set->flags & BLK_MQ_F_LIGHTNVM)
+			hctx->cmd_size = set->cmd_size + nvm_cmd_size();
+		else
+			hctx->cmd_size = set->cmd_size;
 
 		blk_mq_init_cpu_notifier(&hctx->cpu_notifier,
 						blk_mq_hctx_notify, hctx);
@@ -1769,6 +1787,7 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_tag_set *set)
 	struct request_queue *q;
 	unsigned int *map;
 	int i;
+	unsigned int cmd_size = set->cmd_size;;
 
 	ctx = alloc_percpu(struct blk_mq_ctx);
 	if (!ctx)
@@ -1823,6 +1842,11 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_tag_set *set)
 	if (!(set->flags & BLK_MQ_F_SG_MERGE))
 		q->queue_flags |= 1 << QUEUE_FLAG_NO_SG_MERGE;
 
+	if (set->flags & BLK_MQ_F_LIGHTNVM) {
+		q->queue_flags |= 1 << QUEUE_FLAG_LIGHTNVM;
+		cmd_size += nvm_cmd_size();
+	}
+
 	q->sg_reserved_size = INT_MAX;
 
 	INIT_WORK(&q->requeue_work, blk_mq_requeue_work);
@@ -1850,8 +1874,7 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_tag_set *set)
 	blk_mq_init_cpu_queues(q, set->nr_hw_queues);
 
 	q->flush_rq = kzalloc(round_up(sizeof(struct request) +
-				set->cmd_size, cache_line_size()),
-				GFP_KERNEL);
+				cmd_size, cache_line_size()), GFP_KERNEL);
 	if (!q->flush_rq)
 		goto err_hw;
 

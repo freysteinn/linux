@@ -399,7 +399,6 @@ void nvmkv_exit(struct nvm_stor *s);
 int nvmkv_unpack(struct nvm_dev *dev, struct lightnvm_cmd_kv __user *ucmd);
 void nvm_pool_put_block(struct nvm_block *);
 
-
 #define nvm_for_each_pool(n, pool, i) \
 		for ((i) = 0, pool = &(n)->pools[0]; \
 			(i) < (n)->nr_pools; (i)++, pool = &(n)->pools[(i)])

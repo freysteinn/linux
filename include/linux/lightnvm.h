@@ -76,11 +76,10 @@ struct nvm_get_features {
 
 struct nvm_dev;
 
-typedef int (nvm_id_fn)(struct nvm_dev *dev, struct nvm_id *);
-typedef int (nvm_id_chnl_fn)(struct nvm_dev *dev, int chnl_num, struct nvm_id_chnl *);
-typedef int (nvm_get_features_fn)(struct nvm_dev *dev, struct nvm_get_features *);
-typedef int (nvm_set_rsp_fn)(struct nvm_dev *dev, u8 rsp, u8 val);
-typedef int (nvm_queue_rq_fn)(struct nvm_dev *, struct request *);
+typedef int (nvm_id_fn)(struct request_queue *q, struct nvm_id *);
+typedef int (nvm_id_chnl_fn)(struct request_queue *q, int chnl_num, struct nvm_id_chnl *);
+typedef int (nvm_get_features_fn)(struct request_queue *q, struct nvm_get_features *);
+typedef int (nvm_set_rsp_fn)(struct request_queue *q, u8 rsp, u8 val);
 typedef int (nvm_erase_blk_fn)(struct nvm_dev *, sector_t);
 
 struct lightnvm_dev_ops {
@@ -89,42 +88,32 @@ struct lightnvm_dev_ops {
 	nvm_get_features_fn 	*get_features;
 	nvm_set_rsp_fn		*set_responsibility;
 
-	/* Requests */
-	nvm_queue_rq_fn		*nvm_queue_rq;
-
-	/* LightNVM commands */
 	nvm_erase_blk_fn	*nvm_erase_block;
 };
 
 struct nvm_dev {
 	struct lightnvm_dev_ops *ops;
-
-	struct request_queue *q;
 	struct gendisk *disk;
+	struct request_queue *q;
 
 	unsigned int drv_cmd_size;
 
-	void *driver_data;
 	void *stor;
 };
 
 /* LightNVM configuration */
 unsigned int nvm_cmd_size(void);
 
-int nvm_init(struct gendisk *disk, struct nvm_dev *);
-void nvm_exit(struct nvm_dev *);
-struct nvm_dev *nvm_alloc(void);
-void nvm_free(struct nvm_dev *);
+int nvm_init(struct request_queue *, struct lightnvm_dev_ops *);
+void nvm_exit(struct request_queue *);
+
+int nvm_queue_rq(struct nvm_dev *, struct request *);
+void nvm_complete_request(struct nvm_dev *, struct request *, int err);
 
 int nvm_add_sysfs(struct nvm_dev *);
 void nvm_remove_sysfs(struct nvm_dev *);
 
-/* LightNVM blk-mq request management */
-int nvm_queue_rq(struct nvm_dev *, struct request *);
-void nvm_end_io(struct nvm_dev *, struct request *, int);
-void nvm_complete_request(struct nvm_dev *, struct request *);
-
-int nvm_ioctl(struct nvm_dev *dev, fmode_t mode, unsigned int cmd, unsigned long arg);
-int nvm_compat_ioctl(struct nvm_dev *dev, fmode_t mode, unsigned int cmd, unsigned long arg);
+/* kv.c */
+int nvm_kv_rq(struct nvm_dev *, void *arg);
 
 #endif

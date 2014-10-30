@@ -405,7 +405,7 @@ static int del(struct nvm_stor *s, struct lightnvm_cmd_kv *cmd, void *key,
 	return 0;
 }
 
-int nvmkv_unpack(struct nvm_dev *dev, struct lightnvm_cmd_kv __user *ucmd)
+int nvm_rq_kv(struct nvm_dev *dev, struct lightnvm_cmd_kv __user *ucmd)
 {
 	struct nvm_stor *s = dev->stor;
 	struct nvmkv_inflight *inflight = &s->kv.inflight;

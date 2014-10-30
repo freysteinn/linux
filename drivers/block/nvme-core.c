@@ -421,10 +421,7 @@ static void req_completion(struct nvme_queue *nvmeq, void *ctx,
 			rq_data_dir(req) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 	nvme_free_iod(nvmeq->dev, iod);
 
-	if (nvmeq->dev->oacs & NVME_CTRL_OACS_LIGHTNVM || force_lightnvm)
-		nvm_complete_request(cmd_rq->ns->nvm_dev, req);
-	else
-		blk_mq_complete_request(req);
+	blk_mq_complete_request(req);
 }
 
 /* length is in bytes.  gfp flags indicates whether we may sleep. */
@@ -595,9 +592,6 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *req)
 	enum dma_data_direction dma_dir;
 	int psegs = req->nr_phys_segments;
 	int result = BLK_MQ_RQ_QUEUE_BUSY;
-
-	if (ns->nvm_dev)
-		nvm_queue_rq(ns->nvm_dev, req);
 
 	/*
 	 * Requeued IO has already been prepped
@@ -1356,9 +1350,9 @@ static int nvme_shutdown_ctrl(struct nvme_dev *dev)
 	return 0;
 }
 
-static int nvme_nvm_id(struct nvm_dev *nvm_dev, struct nvm_id *nvm_id)
+static int nvme_nvm_id(struct request_queue *q, struct nvm_id *nvm_id)
 {
-	struct nvme_ns *ns = nvm_dev->driver_data;
+	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 	struct pci_dev *pdev = dev->pci_dev;
 	struct nvme_lnvm_id_ctrl *ctrl;
@@ -1386,10 +1380,10 @@ static int nvme_nvm_id(struct nvm_dev *nvm_dev, struct nvm_id *nvm_id)
 }
 
 
-static int nvme_nvm_id_chnl(struct nvm_dev *nvm_dev, int chnl_id,
+static int nvme_nvm_id_chnl(struct request_queue *q, int chnl_id,
 							struct nvm_id_chnl *ic)
 {
-	struct nvme_ns *ns = nvm_dev->driver_data;
+	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 	struct pci_dev *pdev = dev->pci_dev;
 	struct nvme_lnvm_id_chnl *chnl;
@@ -1426,7 +1420,7 @@ static int nvme_nvm_id_chnl(struct nvm_dev *nvm_dev, int chnl_id,
 	return ret;
 }
 
-static int nvme_nvm_get_features(struct nvm_dev *dev,
+static int nvme_nvm_get_features(struct request_queue *q,
 						struct nvm_get_features *gf)
 {
 	gf->rsp[0] = (1 << NVM_RSP_L2P);
@@ -1435,7 +1429,7 @@ static int nvme_nvm_get_features(struct nvm_dev *dev,
 	return 0;
 }
 
-static int nvme_nvm_set_rsp(struct nvm_dev *dev, u8 rsp, u8 val)
+static int nvme_nvm_set_rsp(struct request_queue *q, u8 rsp, u8 val)
 {
 	return NVM_RID_NOT_CHANGEABLE | NVM_DNR;
 }
@@ -1620,7 +1614,7 @@ void nvme_unmap_user_pages(struct nvme_dev *dev, int write,
 		put_page(sg_page(&iod->sg[i]));
 }
 
-static int lnvme_submit_io(struct nvme_ns *ns, struct nvme_user_io *io)
+static int nvme_nvm_submit_io(struct nvme_ns *ns, struct nvme_user_io *io)
 {
 	struct nvme_command c;
 	struct nvme_dev *dev = ns->dev;
@@ -1665,9 +1659,12 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	case nvme_cmd_compare:
 		iod = nvme_map_user_pages(dev, io.opcode & 1, io.addr, length);
 		break;
+	case lnvm_admin_identify:
+	case lnvm_admin_identify_channel:
+	case lnvm_admin_get_features:
+	case lnvm_admin_set_responsibility:
+		return nvme_nvm_submit_io(ns, &io);
 	default:
-		if (ns->nvm_dev)
-			return lnvme_submit_io(ns, &io);
 		return -EINVAL;
 	}
 
@@ -1820,13 +1817,6 @@ static int nvme_ioctl(struct block_device *bdev, fmode_t mode, unsigned int cmd,
 							unsigned long arg)
 {
 	struct nvme_ns *ns = bdev->bd_disk->private_data;
-	int ret;
-
-	if (ns->nvm_dev) {
-		ret = nvm_ioctl(ns->nvm_dev, mode, cmd, arg);
-		if (ret != -ENOTTY)
-			return ret;
-	}
 
 	switch (cmd) {
 	case NVME_IOCTL_ID:
@@ -1850,13 +1840,6 @@ static int nvme_compat_ioctl(struct block_device *bdev, fmode_t mode,
 					unsigned int cmd, unsigned long arg)
 {
 	struct nvme_ns *ns = bdev->bd_disk->private_data;
-	int ret;
-
-	if (ns->nvm_dev) {
-		ret = nvm_ioctl(ns->nvm_dev, mode, cmd, arg);
-		if (ret != -ENOTTY)
-			return ret;
-	}
 
 	switch (cmd) {
 	case SG_IO:
@@ -1958,7 +1941,6 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 			struct nvme_id_ns *id, struct nvme_lba_range_type *rt)
 {
 	struct nvme_ns *ns;
-	struct nvm_dev *nvm_dev = NULL;
 	struct gendisk *disk;
 	int node = dev_to_node(&dev->pci_dev->dev);
 	int lbaf;
@@ -1970,20 +1952,9 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	if (!ns)
 		return NULL;
 
-	if (id->nsfeat & NVME_NS_FEAT_LIGHTNVM || force_lightnvm) {
-		nvm_dev = nvm_alloc();
-		if (!nvm_dev)
-			goto out_free_ns;
-
-		nvm_dev->ops = &nvme_nvm_dev_ops;
-
-		nvm_dev->driver_data = ns;
-		nvm_dev->drv_cmd_size = dev->tagset.cmd_size - nvm_cmd_size();
-	}
-
 	ns->queue = blk_mq_init_queue(&dev->tagset);
 	if (!ns->queue)
-		goto out_free_nvm;
+		goto out_free_ns;
 	queue_flag_set_unlocked(QUEUE_FLAG_NOMERGES, ns->queue);
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, ns->queue);
 	queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, ns->queue);
@@ -2023,23 +1994,20 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 		nvme_config_discard(ns);
 
 	if (id->nsfeat & NVME_NS_FEAT_LIGHTNVM || force_lightnvm) {
-		/* Limit to 4K until LightNVM supports multiple IOs */
+		/* FIXME: Limit to 4K until LightNVM supports multiple IOs */
 		blk_queue_max_hw_sectors(ns->queue, 8);
 
-		nvm_dev->q = ns->queue;
-		nvm_dev->disk = disk;
-
-		if (nvm_init(disk, nvm_dev))
+		if (blk_lightnvm_register(ns->queue, &nvme_nvm_dev_ops))
 			goto out_put_disk;
 
-		ns->nvm_dev = nvm_dev;
+		/* FIXME: This will be handled later by ns */
+		ns->queue->nvm->disk = disk;
+		ns->queue->nvm->drv_cmd_size = sizeof(struct nvme_cmd_info);
 	}
 
 	return ns;
  out_put_disk:
 	put_disk(disk);
- out_free_nvm:
-	nvm_free(nvm_dev);
  out_free_queue:
 	blk_cleanup_queue(ns->queue);
  out_free_ns:
@@ -2222,7 +2190,7 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	 * queue_rq function to be specified.
 	 */
 	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM || force_lightnvm)
-		dev->tagset.cmd_size += nvm_cmd_size();
+		dev->tagset.flags |= BLK_MQ_F_LIGHTNVM;
 
 	if (blk_mq_alloc_tag_set(&dev->tagset))
 		goto out;
@@ -2247,8 +2215,8 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	}
 	list_for_each_entry(ns, &dev->namespaces, list) {
 		add_disk(ns->disk);
-		if (ns->nvm_dev)
-			nvm_add_sysfs(ns->nvm_dev);
+		if (ns->queue->nvm)
+			nvm_add_sysfs(ns->queue->nvm);
 	}
 	res = 0;
 
@@ -2572,8 +2540,8 @@ static void nvme_free_namespaces(struct nvme_dev *dev)
 	struct nvme_ns *ns, *next;
 
 	list_for_each_entry_safe(ns, next, &dev->namespaces, list) {
-		if (ns->nvm_dev)
-			nvm_exit(ns->nvm_dev);
+		if (ns->queue->nvm)
+			nvm_exit(ns->queue);
 		list_del(&ns->list);
 		put_disk(ns->disk);
 		kfree(ns);

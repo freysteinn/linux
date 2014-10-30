@@ -93,7 +93,6 @@ int nvm_queue_rq(struct nvm_dev *dev, struct request *rq)
 		return BLK_MQ_RQ_QUEUE_ERROR;
 	}
 
-
 	if (rq_data_dir(rq) == WRITE)
 		ret = s->type->write_rq(s, rq);
 	else
@@ -106,27 +105,13 @@ int nvm_queue_rq(struct nvm_dev *dev, struct request *rq)
 }
 EXPORT_SYMBOL_GPL(nvm_queue_rq);
 
-void nvm_end_io(struct nvm_dev *nvm_dev, struct request *rq, int error)
+void nvm_complete_request(struct nvm_dev *nvm_dev, struct request *rq, int error)
 {
 	if (rq->cmd_flags & (REQ_NVM|REQ_NVM_MAPPED))
 		nvm_endio(nvm_dev, rq, error);
 
 	if (!(rq->cmd_flags & REQ_NVM))
 		pr_info("lightnvm: request outside lightnvm detected.\n");
-
-	blk_mq_end_io(rq, error);
-}
-EXPORT_SYMBOL_GPL(nvm_end_io);
-
-void nvm_complete_request(struct nvm_dev *nvm_dev, struct request *rq)
-{
-	if (rq->cmd_flags & (REQ_NVM|REQ_NVM_MAPPED))
-		nvm_endio(nvm_dev, rq, 0);
-
-	if (!(rq->cmd_flags & REQ_NVM))
-		pr_info("lightnvm: request outside lightnvm.\n");
-
-	blk_mq_complete_request(rq);
 }
 EXPORT_SYMBOL_GPL(nvm_complete_request);
 
@@ -327,23 +312,11 @@ err_rev_trans_map:
 #define NVM_NUM_BLOCKS 256
 #define NVM_NUM_PAGES 256
 
-struct nvm_dev *nvm_alloc()
-{
-	return kmalloc(sizeof(struct nvm_dev), GFP_KERNEL);
-}
-EXPORT_SYMBOL_GPL(nvm_alloc);
-
-void nvm_free(struct nvm_dev *dev)
-{
-	kfree(dev);
-}
-EXPORT_SYMBOL_GPL(nvm_free);
-
-int nvm_queue_init(struct nvm_dev *dev)
+int nvm_queue_init(struct request_queue *q)
 {
 	int nr_sectors_per_page = 8; /* 512 bytes */
 
-	if (queue_logical_block_size(dev->q) > (nr_sectors_per_page << 9)) {
+	if (queue_logical_block_size(q) > (nr_sectors_per_page << 9)) {
 		pr_err("nvm: logical page size not supported by hardware");
 		return false;
 	}
@@ -351,8 +324,9 @@ int nvm_queue_init(struct nvm_dev *dev)
 	return true;
 }
 
-int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
+int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 {
+	struct nvm_dev *nvm = q->nvm;
 	struct nvm_stor *s;
 	struct nvm_id nvm_id;
 	struct nvm_id_chnl *nvm_id_chnl;
@@ -360,10 +334,13 @@ int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
 
 	unsigned long size;
 
-	if (!dev->ops->identify)
+	if (!ops->identify || !ops->identify_channel || !ops->get_features ||
+						!ops->set_responsibility)
 		return -EINVAL;
 
-	if (!nvm_queue_init(dev))
+	nvm->ops = ops;
+
+	if (!nvm_queue_init(q))
 		return -EINVAL;
 
 	nvm_id_chnl = kmalloc(sizeof(struct nvm_id_chnl), GFP_KERNEL);
@@ -395,7 +372,7 @@ int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
 		goto err_target;
 	}
 
-	if (dev->ops->identify(dev, &nvm_id)) {
+	if (nvm->ops->identify(q, &nvm_id)) {
 		ret = -EINVAL;
 		goto err_target;
 	}
@@ -403,7 +380,7 @@ int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
 	s->nr_pools = nvm_id.nchannels;
 
 	/* TODO: We're limited to the same setup for each channel */
-	if (dev->ops->identify_channel(dev, 0, nvm_id_chnl)) {
+	if (nvm->ops->identify_channel(q, 0, nvm_id_chnl)) {
 		ret = -EINVAL;
 		goto err_target;
 	}
@@ -443,7 +420,7 @@ int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
 		goto err_target;
 	}
 
-	ret = nvm_stor_init(dev, s);
+	ret = nvm_stor_init(nvm, s);
 	if (ret < 0) {
 		pr_err("lightnvm: cannot initialize nvm structure.");
 		goto err_map;
@@ -464,7 +441,7 @@ int nvm_init(struct gendisk *disk, struct nvm_dev *dev)
 	pr_info("lightnvm: allocated %lu physical pages (%lu KB)\n",
 			s->nr_pages, s->nr_pages * s->sector_size / 1024);
 
-	dev->stor = s;
+	nvm->stor = s;
 	kfree(nvm_id_chnl);
 	return 0;
 
@@ -482,10 +459,15 @@ err:
 }
 EXPORT_SYMBOL_GPL(nvm_init);
 
-void nvm_exit(struct nvm_dev *dev)
+void nvm_exit(struct request_queue *q)
 {
-	struct nvm_stor *s = dev->stor;
+	struct nvm_dev *nvm = q->nvm;
+	struct nvm_stor *s;
 
+	if (!nvm)
+		return;
+
+	s = nvm->stor;
 	if (!s)
 		return;
 
@@ -512,29 +494,6 @@ void nvm_exit(struct nvm_dev *dev)
 	pr_info("lightnvm: successfully unloaded\n");
 }
 EXPORT_SYMBOL_GPL(nvm_exit);
-
-int nvm_ioctl(struct nvm_dev *dev, fmode_t mode, unsigned int cmd,
-							unsigned long arg)
-{
-	switch (cmd) {
-	case LIGHTNVM_IOCTL_KV:
-		return nvmkv_unpack(dev, (void __user *)arg);
-	default:
-		return -ENOTTY;
-	}
-}
-EXPORT_SYMBOL_GPL(nvm_ioctl);
-
-#ifdef CONFIG_COMPAT
-int nvm_compat_ioctl(struct nvm_dev *dev, fmode_t mode,
-		unsigned int cmd, unsigned long arg)
-{
-	return nvm_ioctl(dev, mode, cmd, arg);
-}
-EXPORT_SYMBOL_GPL(nvm_compat_ioctl);
-#else
-#define nvm_compat_ioctl	NULL
-#endif
 
 MODULE_DESCRIPTION("LightNVM");
 MODULE_AUTHOR("Matias Bjorling <mabj@itu.dk>");

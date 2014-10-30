@@ -522,6 +522,7 @@ struct request_queue {
 #define QUEUE_FLAG_INIT_DONE   20	/* queue is initialized */
 #define QUEUE_FLAG_NO_SG_MERGE 21	/* don't attempt to merge SG segments*/
 #define QUEUE_FLAG_SG_GAPS     22	/* queue doesn't support SG gaps */
+#define QUEUE_FLAG_LIGHTNVM    23	/* lightnvm managed queue */
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -609,6 +610,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_queue_discard(q)	test_bit(QUEUE_FLAG_DISCARD, &(q)->queue_flags)
 #define blk_queue_secdiscard(q)	(blk_queue_discard(q) && \
 	test_bit(QUEUE_FLAG_SECDISCARD, &(q)->queue_flags))
+#define blk_queue_lightnvm(q)	test_bit(QUEUE_FLAG_LIGHTNVM, &(q)->queue_flags)
 
 #define blk_noretry_request(rq) \
 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
@@ -1516,6 +1518,28 @@ extern int blk_integrity_merge_rq(struct request_queue *, struct request *,
 				  struct request *);
 extern int blk_integrity_merge_bio(struct request_queue *, struct request *,
 				   struct bio *);
+
+#ifdef CONFIG_LIGHTNVM
+struct lightnvm_dev_ops;
+
+extern int blk_lightnvm_register(struct request_queue *, struct lightnvm_dev_ops *);
+extern void blk_lightnvm_unregister(struct request_queue *);
+extern int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq);
+extern int blk_lightnvm_ioctl_kv(struct block_device *bdev,
+						unsigned cmd, char __user *arg);
+#else
+static int blk_lightnvm_register(struct request_queue *q, struct lightnvm_dev_ops *ops)
+{
+	return -EINVAL;
+}
+static void blk_lightnvm_unregister(struct request_queue *q) { }
+static int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq) { return -EINVAL; }
+static int blk_lightnvm_ioctl_kv(struct block_device *bdev,
+						unsigned cmd, char __user *arg)
+{
+	return -ENOTTY;
+}
+#endif
 
 static inline
 struct blk_integrity *bdev_get_integrity(struct block_device *bdev)
