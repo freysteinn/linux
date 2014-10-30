@@ -118,8 +118,8 @@ void nvm_endio(struct nvm_dev *nvm_dev, struct request *rq, int err)
 		/* maintain data in buffer until block is full */
 		data_cnt = atomic_inc_return(&block->data_cmnt_size);
 		if (data_cnt == s->nr_pages_per_blk) {
-			/*defer scheduling of the block for recycling*/
-			queue_work(s->kgc_wq, &block->ws_eio);
+			/* cannot take the pool lock here, defer if necessary */
+			s->gc_ops->queue(block);
 		}
 	}
 
@@ -164,7 +164,7 @@ int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 	p = s->type->lookup_ltop(s, l_addr);
 	if (!p) {
 		nvm_unlock_laddr_range(s, l_addr, npages);
-		nvm_gc_kick(s);
+		s->gc_ops->kick(s);
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}
 
@@ -191,7 +191,7 @@ int __nvm_write_rq(struct nvm_stor *s, struct request *rq, int is_gc)
 	if (!p) {
 		BUG_ON(is_gc);
 		nvm_unlock_laddr_range(s, l_addr, npages);
-		nvm_gc_kick(s);
+		s->gc_ops->kick(s);
 
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}

@@ -180,14 +180,12 @@ static int nvm_pools_init(struct nvm_stor *s)
 			spin_lock_init(&block->lock);
 			atomic_set(&block->gc_running, 0);
 			INIT_LIST_HEAD(&block->list);
-			INIT_LIST_HEAD(&block->prio);
+
 
 			block->pool = pool;
 			block->id = (i * s->nr_blks_per_pool) + j;
 
 			list_add_tail(&block->list, &pool->free_list);
-			INIT_WORK(&block->ws_gc, nvm_gc_block);
-			INIT_WORK(&block->ws_eio, nvm_gc_recycle_block);
 		}
 	}
 
@@ -290,7 +288,7 @@ static int nvm_stor_init(struct nvm_dev *dev, struct nvm_stor *s)
 		goto err_addr_pool_gc;
 
 	/* FIXME: Clean up pool init on failure. */
-	setup_timer(&s->gc_timer, nvm_gc_cb, (unsigned long)s);
+	setup_timer(&s->gc_timer, s->gc_ops->gc_timer, (unsigned long)s);
 	mod_timer(&s->gc_timer, jiffies + msecs_to_jiffies(1000));
 
 	return 0;

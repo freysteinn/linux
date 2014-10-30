@@ -77,9 +77,8 @@ struct nvm_block {
 	struct nvm_pool *pool;
 	struct nvm_ap *ap;
 
-	/* Management and GC structures */
+	/* Management structures */
 	struct list_head list;
-	struct list_head prio;
 
 	/* Persistent data structures */
 	atomic_t data_size; /* data pages inserted into data variable */
@@ -87,8 +86,10 @@ struct nvm_block {
 
 	/* Block state handling */
 	atomic_t gc_running;
-	struct work_struct ws_gc;
-	struct work_struct ws_eio;
+
+	/* For target and GC algorithms  */
+	void *tgt_private;
+	void *gc_private;
 };
 
 /* Logical to physical mapping */
@@ -134,7 +135,6 @@ struct nvm_pool {
 	struct bio *cur_bio;
 
 	unsigned int gc_running;
-	struct work_struct ws_gc;
 
 	void *tgt_private;	/*target-specific per-pool data*/
 	void *gc_private;	/*GC-specific per-pool data*/
@@ -212,9 +212,9 @@ typedef void (*nvm_tgt_exit_fn)(struct nvm_stor *);
 typedef void (*nvm_endio_fn)(struct nvm_stor *, struct request *,
 				struct per_rq_data *, unsigned long *delay);
 
-typedef void (*nvm_gc_on_gc_time_fn)(unsigned long s_addr); /*TODO: can't we do better ?*/
+typedef void (*nvm_gc_timer_fn)(unsigned long s_addr);
+typedef void (*nvm_deferred_fn)(struct work_struct *work);
 typedef void (*nvm_gc_queue_fn)(struct nvm_block *block);
-typedef void (*nvm_gc_reclaim_fn)(struct nvm_block *block);
 typedef void (*nvm_gc_kick_fn)(struct nvm_stor *s);
 typedef int (*nvm_gc_init_fn)(struct nvm_stor *s);
 typedef void (*nvm_gc_exit_fn)(struct nvm_stor *s);
@@ -251,9 +251,8 @@ struct nvm_gc_type {
 	unsigned int version[3];
 
 	/*GC interface*/
-	nvm_gc_on_gc_time_fn on_gc_time;
+	nvm_gc_timer_fn gc_timer;
 	nvm_gc_queue_fn queue;
-	nvm_gc_reclaim_fn reclaim;
 	nvm_gc_kick_fn kick;
 
 	/* module-specific init/teardown */
@@ -385,8 +384,6 @@ sector_t nvm_alloc_phys_addr(struct nvm_block *);
 /*   Naive implementations */
 void nvm_delayed_bio_submit(struct work_struct *);
 void nvm_deferred_bio_submit(struct work_struct *);
-void nvm_gc_block(struct work_struct *);
-void nvm_gc_recycle_block(struct work_struct *);
 
 /* Allocation of physical addresses from block
  * when increasing responsibility. */
@@ -404,12 +401,6 @@ void nvm_setup_rq(struct nvm_stor *, struct request *, struct nvm_addr *, sector
 void nvm_reset_block(struct nvm_block *);
 
 void nvm_endio(struct nvm_dev *, struct request *, int);
-
-/* gc.c */
-void nvm_block_erase(struct kref *);
-void nvm_gc_cb(unsigned long data);
-void nvm_gc_collect(struct work_struct *work);
-void nvm_gc_kick(struct nvm_stor *s);
 
 /* targets.c */
 struct nvm_block *nvm_pool_get_block(struct nvm_pool *, int is_gc);
