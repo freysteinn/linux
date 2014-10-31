@@ -157,7 +157,6 @@ static int nvm_pools_init(struct nvm_stor *s)
 
 	nvm_for_each_pool(s, pool, i) {
 		spin_lock_init(&pool->lock);
-		spin_lock_init(&pool->waiting_lock);
 
 		INIT_LIST_HEAD(&pool->free_list);
 		INIT_LIST_HEAD(&pool->used_list);
@@ -168,8 +167,6 @@ static int nvm_pools_init(struct nvm_stor *s)
 		pool->phy_addr_end = (i + 1) * s->nr_blks_per_pool - 1;
 		pool->nr_free_blocks = pool->nr_blocks =
 				pool->phy_addr_end - pool->phy_addr_start + 1;
-		bio_list_init(&pool->waiting_bios);
-		atomic_set(&pool->is_active, 0);
 
 		pool->blocks = vzalloc(sizeof(struct nvm_block) *
 							pool->nr_blocks);

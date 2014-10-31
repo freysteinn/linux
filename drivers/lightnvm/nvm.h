@@ -81,7 +81,6 @@ struct nvm_block {
 	struct list_head list;
 
 	/* Persistent data structures */
-	atomic_t data_size; /* data pages inserted into data variable */
 	atomic_t data_cmnt_size; /* data pages committed to stable storage */
 
 	/* Block state handling */
@@ -124,17 +123,6 @@ struct nvm_pool {
 
 	struct nvm_block *blocks;
 	struct nvm_stor *s;
-
-	/* Postpone issuing I/O if append point is active */
-	atomic_t is_active;
-
-	spinlock_t waiting_lock;
-	struct work_struct waiting_ws;
-	struct bio_list waiting_bios;
-
-	struct bio *cur_bio;
-
-	unsigned int gc_running;
 
 	void *tgt_private;	/*target-specific per-pool data*/
 	void *gc_private;	/*GC-specific per-pool data*/

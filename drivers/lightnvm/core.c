@@ -53,7 +53,6 @@ void nvm_reset_block(struct nvm_block *block)
 	block->next_page = 0;
 	block->nr_invalid_pages = 0;
 	atomic_set(&block->gc_running, 0);
-	atomic_set(&block->data_size, 0);
 	atomic_set(&block->data_cmnt_size, 0);
 	spin_unlock(&block->lock);
 }
