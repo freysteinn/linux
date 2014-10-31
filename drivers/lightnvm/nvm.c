@@ -423,12 +423,6 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	/* Constants */
 	s->nr_pages = s->nr_pools * s->nr_blks_per_pool * s->nr_pages_per_blk;
 
-	ret = nvmkv_init(s, size);
-	if (ret) {
-		pr_err("lightnvm: kv init failed.\n");
-		goto err_cfg;
-	}
-
 	if (s->nr_pages_per_blk > MAX_INVALID_PAGES_STORAGE * BITS_PER_LONG) {
 		pr_err("lightnvm: Num. pages per block too high. Increase MAX_INVALID_PAGES_STORAGE.");
 		ret = -EINVAL;
@@ -438,7 +432,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	ret = nvm_stor_init(nvm, s);
 	if (ret < 0) {
 		pr_err("lightnvm: cannot initialize nvm structure.");
-		goto err_map;
+		goto err_cfg;
 	}
 
 	pr_info("lightnvm: pools: %u\n", s->nr_pools);
@@ -460,8 +454,6 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	kfree(nvm_id_chnl);
 	return 0;
 
-err_map:
-	nvmkv_exit(s);
 err_cfg:
 	kfree(s);
 err_stor:
