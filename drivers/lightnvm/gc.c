@@ -187,7 +187,7 @@ void nvm_greedy_block_gc(struct work_struct *work)
 	struct nvm_block *block = block_data->block;
 	struct nvm_stor *s = block->pool->s;
 
-	pr_dbg("nvm: block '%d' being reclaimed now\n", block->id);
+	pr_debug("nvm: block '%d' being reclaimed now\n", block->id);
 	nvm_move_valid_pages(s, block);
 	nvm_erase_block(s, block);
 	s->type->pool_put_blk(block);
@@ -254,7 +254,7 @@ static void nvm_greedy_pool_gc(struct work_struct *work)
 		BUG_ON(!block_is_full(block));
 		BUG_ON(atomic_inc_return(&block->gc_running) != 1);
 
-		pr_dbg("selected block '%d' as GC victim\n", block->id);
+		pr_debug("selected block '%d' as GC victim\n", block->id);
 		queue_work(s->kgc_wq, &gblock->ws_gc);
 
 		nr_blocks_need--;
@@ -274,7 +274,7 @@ static void nvm_greedy_queue_gc(struct work_struct *work)
 	spin_lock(&pool->lock);
 	list_add_tail(&gblock->prio, &gpool->prio_list);
 	spin_unlock(&pool->lock);
-	pr_dbg("nvm: block '%d' is full, allow GC (DONE)\n", gblock->block->id);
+	pr_debug("nvm: block '%d' is full, allow GC (DONE)\n", gblock->block->id);
 }
 
 static void nvm_greedy_queue(struct nvm_block *block)
@@ -282,7 +282,7 @@ static void nvm_greedy_queue(struct nvm_block *block)
 	struct greedy_block *gblock = greedy_block(block);
 	struct nvm_pool *pool = block->pool;
 	struct nvm_stor *s = pool->s;
-	pr_dbg("nvm: block '%d' is full, allow GC (sched)\n", block->id);
+	pr_debug("nvm: block '%d' is full, allow GC (sched)\n", block->id);
 
 	queue_work(s->kgc_wq, &gblock->ws_queue_gc);
 }
