@@ -382,8 +382,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	}
 
 	pr_debug("lightnvm dev: ver %u type %u chnls %u\n",
-			le16_to_cpu(nvm_id.ver_id), nvm_id.nvm_type,
-			le16_to_cpu(nvm_id.nchannels));
+			nvm_id.ver_id, nvm_id.nvm_type, nvm_id.nchannels);
 
 	s->nr_pools = nvm_id.nchannels;
 
@@ -394,11 +393,9 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	}
 
 	pr_debug("lightnvm dev: qsize %llu gr %llu ge %llu begin %llu end %llu\n",
-			le64_to_cpu(nvm_id_chnl->queue_size),
-			le64_to_cpu(nvm_id_chnl->gran_read),
-			le64_to_cpu(nvm_id_chnl->gran_erase),
-			le64_to_cpu(nvm_id_chnl->laddr_begin),
-			le64_to_cpu(nvm_id_chnl->laddr_end));
+			nvm_id_chnl->queue_size,
+			nvm_id_chnl->gran_read, nvm_id_chnl->gran_erase,
+			nvm_id_chnl->laddr_begin, nvm_id_chnl->laddr_end);
 
 	s->gran_blk = le64_to_cpu(nvm_id_chnl->gran_erase);
 	s->gran_read = le64_to_cpu(nvm_id_chnl->gran_read);
