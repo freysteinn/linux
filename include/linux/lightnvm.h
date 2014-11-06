@@ -58,15 +58,15 @@ struct nvm_id_chnl {
 	u64	gran_write;
 	u64	gran_erase;
 	u64	oob_size;
+	u64	laddr_begin;
+	u64	laddr_end;
 	u32	t_r;
 	u32	t_sqr;
 	u32	t_w;
 	u32	t_sqw;
 	u32	t_e;
 	u8	io_sched;
-	u64	laddr_begin;
-	u64	laddr_end;
-	u8	reserved[4034];
+	u8	reserved[4019];
 };
 
 struct nvm_get_features {

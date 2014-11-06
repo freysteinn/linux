@@ -98,15 +98,15 @@ struct nvme_lnvm_id_chnl {
 	__le64			gran_write;
 	__le64			gran_erase;
 	__le64			oob_size;
+	__le64			laddr_begin;
+	__le64			laddr_end;
 	__le32			t_r;
 	__le32			t_sqr;
 	__le32			t_w;
 	__le32			t_sqw;
 	__le32			t_e;
 	__u8			io_sched;
-	__le64			laddr_begin;
-	__le64			laddr_end;
-	__u8			unused[4034];
+	__u8			unused[4019];
 } __attribute__((packed));
 
 enum {
