@@ -50,7 +50,7 @@ struct nvm_id {
 	u16	nchannels;
 	u8	nvm_type;
 	u8	reserved[11];
-};
+} __attribute__((packed));
 
 struct nvm_id_chnl {
 	u64	queue_size;
@@ -67,7 +67,7 @@ struct nvm_id_chnl {
 	u32	t_e;
 	u8	io_sched;
 	u8	reserved[4019];
-};
+} __attribute__((packed));
 
 struct nvm_get_features {
 	u64	rsp[4];
