@@ -47,8 +47,8 @@ enum {
 
 struct nvm_id {
 	u16	ver_id;
-	u8	nvm_type;
 	u16	nchannels;
+	u8	nvm_type;
 	u8	reserved[11];
 };
 
