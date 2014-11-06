@@ -384,7 +384,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	pr_debug("lightnvm dev: ver %u type %u chnls %u\n",
 			nvm_id.ver_id, nvm_id.nvm_type, nvm_id.nchannels);
 
-	s->nr_pools = le16_to_cpu(nvm_id.nchannels);
+	s->nr_pools = nvm_id.nchannels;
 
 	/* TODO: We're limited to the same setup for each channel */
 	if (nvm->ops->identify_channel(q, 0, nvm_id_chnl)) {
@@ -397,15 +397,15 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 			nvm_id_chnl->gran_read, nvm_id_chnl->gran_erase,
 			nvm_id_chnl->laddr_begin, nvm_id_chnl->laddr_end);
 
-	s->gran_blk = le64_to_cpu(nvm_id_chnl->gran_erase);
-	s->gran_read = le64_to_cpu(nvm_id_chnl->gran_read);
-	s->gran_write = le64_to_cpu(nvm_id_chnl->gran_write);
+	s->gran_blk = nvm_id_chnl->gran_erase;
+	s->gran_read = nvm_id_chnl->gran_read;
+	s->gran_write = nvm_id_chnl->gran_write;
 
 	size = (nvm_id_chnl->laddr_end - nvm_id_chnl->laddr_begin)
 					* min(s->gran_read, s->gran_write);
 
 	s->total_blocks = size / s->gran_blk;
-	s->nr_blks_per_pool = s->total_blocks / le16_to_cpu(nvm_id.nchannels);
+	s->nr_blks_per_pool = s->total_blocks / nvm_id.nchannels;
 	/* TODO: gran_{read,write} may differ */
 	s->nr_pages_per_blk = s->gran_blk / s->gran_read *
 					(s->gran_read / EXPOSED_PAGE_SIZE);
@@ -413,9 +413,9 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	s->nr_aps_per_pool = APS_PER_POOL;
 	/* s->config.flags = NVM_OPT_* */
 	s->config.gc_time = GC_TIME;
-	s->config.t_read = le32_to_cpu(nvm_id_chnl->t_r) / 1000;
-	s->config.t_write = le32_to_cpu(nvm_id_chnl->t_w) / 1000;
-	s->config.t_erase = le32_to_cpu(nvm_id_chnl->t_e) / 1000;
+	s->config.t_read = nvm_id_chnl->t_r / 1000;
+	s->config.t_write = nvm_id_chnl->t_w / 1000;
+	s->config.t_erase = nvm_id_chnl->t_e / 1000;
 
 	/* Constants */
 	s->nr_pages = s->nr_pools * s->nr_blks_per_pool * s->nr_pages_per_blk;
