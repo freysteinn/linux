@@ -87,8 +87,8 @@ struct nvme_id_ctrl {
 
 struct nvme_lnvm_id_ctrl {
 	__le16			ver_id;
-	__u8			nvm_type;
 	__le16			nchannels;
+	__u8			nvm_type;
 	__u8			unused[4091];
 } __attribute__((packed));
 
