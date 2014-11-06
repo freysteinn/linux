@@ -384,7 +384,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	pr_debug("lightnvm dev: ver %u type %u chnls %u\n",
 			nvm_id.ver_id, nvm_id.nvm_type, nvm_id.nchannels);
 
-	s->nr_pools = nvm_id.nchannels;
+	s->nr_pools = le16_to_cpu(nvm_id.nchannels);
 
 	/* TODO: We're limited to the same setup for each channel */
 	if (nvm->ops->identify_channel(q, 0, nvm_id_chnl)) {
@@ -405,7 +405,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 					* min(s->gran_read, s->gran_write);
 
 	s->total_blocks = size / s->gran_blk;
-	s->nr_blks_per_pool = s->total_blocks / nvm_id.nchannels;
+	s->nr_blks_per_pool = s->total_blocks / le16_to_cpu(nvm_id.nchannels);
 	/* TODO: gran_{read,write} may differ */
 	s->nr_pages_per_blk = s->gran_blk / s->gran_read *
 					(s->gran_read / EXPOSED_PAGE_SIZE);
