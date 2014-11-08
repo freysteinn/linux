@@ -208,6 +208,9 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
+#if CONFIG_LIGHTNVM
+	unsigned long phys_sector;
+#endif
 };
 
 static inline unsigned short req_get_ioprio(struct request *req)

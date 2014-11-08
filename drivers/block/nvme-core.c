@@ -576,6 +576,9 @@ static int nvme_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 	cmnd->rw.control = cpu_to_le16(control);
 	cmnd->rw.dsmgmt = cpu_to_le32(dsmgmt);
 
+	if (req->cmd_flags & REQ_NVM_MAPPED)
+		cmnd->lnvm_rw.phys_addr = cpu_to_le64(req->phys_sector + 1);
+
 	if (++nvmeq->sq_tail == nvmeq->q_depth)
 		nvmeq->sq_tail = 0;
 	writel(nvmeq->sq_tail, nvmeq->q_db);

@@ -167,11 +167,9 @@ int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}
 
-	rq->__sector = p->addr * NR_PHY_IN_LOG +
+	if (p->block)
+		rq->phys_sector = p->addr * NR_PHY_IN_LOG +
 					(blk_rq_pos(rq) % NR_PHY_IN_LOG);
-
-	if (!p->block)
-		rq->__sector = 0;
 
 	nvm_setup_rq(s, rq, p, l_addr, NVM_RQ_NONE);
 	//printk("nvm: R{LBA:%llu,sec:%llu}\n", p->addr, p->addr * NR_PHY_IN_LOG);
@@ -195,11 +193,7 @@ int __nvm_write_rq(struct nvm_stor *s, struct request *rq, int is_gc)
 		return BLK_MQ_RQ_QUEUE_BUSY;
 	}
 
-	/*
-	 * MB: Should be revised. We need a different hook into device
-	 * driver
-	 */
-	rq->__sector = p->addr * NR_PHY_IN_LOG;
+	rq->phys_sector = p->addr * NR_PHY_IN_LOG;
 	/*printk("nvm: W %llu(%llu) B: %u\n", p->addr, p->addr * NR_PHY_IN_LOG,
 			p->block->id);*/
 
