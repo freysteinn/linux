@@ -56,7 +56,7 @@ EXPORT_SYMBOL(blk_lightnvm_unregister);
 
 int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq)
 {
-	return nvm_queue_rq(nvm, rq);
+	return nvm_map_rq(nvm, rq);
 }
 
 int blk_lightnvm_ioctl_kv(struct block_device *bdev,

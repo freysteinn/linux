@@ -80,18 +80,18 @@ void nvm_unregister_target(struct nvm_target_type *tt)
 	up_write(&_lock);
 }
 
-int nvm_queue_rq(struct nvm_dev *dev, struct request *rq)
+int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 {
 	struct nvm_stor *s = dev->stor;
 	int ret;
 
 	if (rq->cmd_flags & REQ_NVM_MAPPED)
-		return BLK_MQ_RQ_QUEUE_OK;
+		return -EINVAL;
 
 	if (blk_rq_pos(rq) / NR_PHY_IN_LOG > s->nr_pages) {
 		pr_err("lightnvm: out-of-bound address: %llu",
 					(unsigned long long) blk_rq_pos(rq));
-		return BLK_MQ_RQ_QUEUE_ERROR;
+		return -EINVAL;
 	}
 
 	if (rq_data_dir(rq) == WRITE)
@@ -99,12 +99,12 @@ int nvm_queue_rq(struct nvm_dev *dev, struct request *rq)
 	else
 		ret = s->type->read_rq(s, rq);
 
-	if (ret == BLK_MQ_RQ_QUEUE_OK)
+	if (!ret)
 		rq->cmd_flags |= (REQ_NVM|REQ_NVM_MAPPED);
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nvm_queue_rq);
+EXPORT_SYMBOL_GPL(nvm_map_rq);
 
 void nvm_complete_request(struct nvm_dev *nvm_dev, struct request *rq, int error)
 {
