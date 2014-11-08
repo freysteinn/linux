@@ -1095,6 +1095,7 @@ static void blk_mq_bio_to_request(struct request *rq, struct bio *bio)
 	if (blk_do_io_stat(rq))
 		blk_account_io_start(rq, 1);
 
+	/* TODO: error handling */
 	if (blk_queue_lightnvm(q))
 		blk_lightnvm_map(q->nvm, rq);
 }
