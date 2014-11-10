@@ -182,53 +182,53 @@ struct nvm_block;
 struct nvm_pool;
 
 /* overridable functionality */
-typedef struct nvm_addr *(*nvm_lookup_ltop_fn)(struct nvm_stor *, sector_t);
-typedef struct nvm_addr *(*nvm_map_ltop_page_fn)(struct nvm_stor *, sector_t,
+typedef struct nvm_addr *(nvm_lookup_ltop_fn)(struct nvm_stor *, sector_t);
+typedef struct nvm_addr *(nvm_map_ltop_page_fn)(struct nvm_stor *, sector_t,
 						int);
-typedef struct nvm_block *(*nvm_map_ltop_block_fn)(struct nvm_stor *, sector_t,
+typedef struct nvm_block *(nvm_map_ltop_block_fn)(struct nvm_stor *, sector_t,
 						int);
-typedef int (*nvm_write_rq_fn)(struct nvm_stor *, struct request *);
-typedef int (*nvm_read_rq_fn)(struct nvm_stor *, struct request *);
-typedef void (*nvm_alloc_phys_addr_fn)(struct nvm_stor *, struct nvm_block *);
-typedef struct nvm_block *(*nvm_pool_get_blk_fn)(struct nvm_pool *pool,
+typedef int (nvm_write_rq_fn)(struct nvm_stor *, struct request *);
+typedef int (nvm_read_rq_fn)(struct nvm_stor *, struct request *);
+typedef void (nvm_alloc_phys_addr_fn)(struct nvm_stor *, struct nvm_block *);
+typedef struct nvm_block *(nvm_pool_get_blk_fn)(struct nvm_pool *pool,
 						int is_gc);
-typedef void (*nvm_pool_put_blk_fn)(struct nvm_block *block);
-typedef int (*nvm_ioctl_fn)(struct nvm_stor *,
+typedef void (nvm_pool_put_blk_fn)(struct nvm_block *block);
+typedef int (nvm_ioctl_fn)(struct nvm_stor *,
 					unsigned int cmd, unsigned long arg);
-typedef int (*nvm_tgt_init_fn)(struct nvm_stor *);
-typedef void (*nvm_tgt_exit_fn)(struct nvm_stor *);
-typedef void (*nvm_endio_fn)(struct nvm_stor *, struct request *,
+typedef int (nvm_tgt_init_fn)(struct nvm_stor *);
+typedef void (nvm_tgt_exit_fn)(struct nvm_stor *);
+typedef void (nvm_endio_fn)(struct nvm_stor *, struct request *,
 				struct per_rq_data *, unsigned long *delay);
 
-typedef void (*nvm_gc_timer_fn)(unsigned long s_addr);
-typedef void (*nvm_deferred_fn)(struct work_struct *work);
-typedef void (*nvm_gc_queue_fn)(struct nvm_block *block);
-typedef void (*nvm_gc_kick_fn)(struct nvm_stor *s);
-typedef int (*nvm_gc_init_fn)(struct nvm_stor *s);
-typedef void (*nvm_gc_exit_fn)(struct nvm_stor *s);
+typedef void (nvm_gc_timer_fn)(unsigned long s_addr);
+typedef void (nvm_deferred_fn)(struct work_struct *work);
+typedef void (nvm_gc_queue_fn)(struct nvm_block *block);
+typedef void (nvm_gc_kick_fn)(struct nvm_stor *s);
+typedef int (nvm_gc_init_fn)(struct nvm_stor *s);
+typedef void (nvm_gc_exit_fn)(struct nvm_stor *s);
 
 struct nvm_target_type {
 	const char *name;
 	unsigned int version[3];
 
 	/* lookup functions */
-	nvm_lookup_ltop_fn lookup_ltop;
+	nvm_lookup_ltop_fn *lookup_ltop;
 
 	/* handling of request */
-	nvm_write_rq_fn write_rq;
-	nvm_read_rq_fn read_rq;
-	nvm_ioctl_fn ioctl;
-	nvm_endio_fn end_rq;
+	nvm_write_rq_fn *write_rq;
+	nvm_read_rq_fn *read_rq;
+	nvm_ioctl_fn *ioctl;
+	nvm_endio_fn *end_rq;
 
 	/* engine-specific overrides */
-	nvm_pool_get_blk_fn pool_get_blk;
-	nvm_pool_put_blk_fn pool_put_blk;
-	nvm_map_ltop_page_fn map_page;
-	nvm_map_ltop_block_fn map_block;
+	nvm_pool_get_blk_fn *pool_get_blk;
+	nvm_pool_put_blk_fn *pool_put_blk;
+	nvm_map_ltop_page_fn *map_page;
+	nvm_map_ltop_block_fn *map_block;
 
 	/* module-specific init/teardown */
-	nvm_tgt_init_fn init;
-	nvm_tgt_exit_fn exit;
+	nvm_tgt_init_fn *init;
+	nvm_tgt_exit_fn *exit;
 
 	/* For lightnvm internal use */
 	struct list_head list;
@@ -239,13 +239,13 @@ struct nvm_gc_type {
 	unsigned int version[3];
 
 	/*GC interface*/
-	nvm_gc_timer_fn gc_timer;
-	nvm_gc_queue_fn queue;
-	nvm_gc_kick_fn kick;
+	nvm_gc_timer_fn *gc_timer;
+	nvm_gc_queue_fn *queue;
+	nvm_gc_kick_fn *kick;
 
 	/* module-specific init/teardown */
-	nvm_gc_init_fn init;
-	nvm_gc_exit_fn exit;
+	nvm_gc_init_fn *init;
+	nvm_gc_exit_fn *exit;
 };
 
 struct kv_entry;
