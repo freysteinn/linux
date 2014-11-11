@@ -45,12 +45,6 @@ enum {
 	NVM_NO_COMPLETE		= 0xffff,
 };
 
-struct nvm_id {
-	u16	ver_id;
-	u16	nchannels;
-	u8	nvm_type;
-};
-
 struct nvm_id_chnl {
 	u64	queue_size;
 	u64	gran_read;
@@ -67,6 +61,12 @@ struct nvm_id_chnl {
 	u8	io_sched;
 };
 
+struct nvm_id {
+	u16	ver_id;
+	u16	nchannels;
+	u8	nvm_type;
+};
+
 struct nvm_get_features {
 	u64	rsp[4];
 	u64	ext[4];
@@ -74,15 +74,15 @@ struct nvm_get_features {
 
 struct nvm_dev;
 
-typedef int (nvm_id_fn)(struct request_queue *q, struct nvm_id *);
-typedef int (nvm_id_chnl_fn)(struct request_queue *q, int chnl_num, struct nvm_id_chnl *);
+typedef u32 (nvm_id_alloc_fn)(struct nvm_id_chnl **mem_out, u32 off, u32 len);
+typedef int (nvm_id_fn)(struct nvm_id_chnl **chnls, struct nvm_id *id, u32 off,
+			nvm_id_alloc_fn *alloc_fn, struct request_queue *q);
 typedef int (nvm_get_features_fn)(struct request_queue *q, struct nvm_get_features *);
 typedef int (nvm_set_rsp_fn)(struct request_queue *q, u8 rsp, u8 val);
 typedef int (nvm_erase_blk_fn)(struct nvm_dev *, sector_t);
 
 struct lightnvm_dev_ops {
 	nvm_id_fn		*identify;
-	nvm_id_chnl_fn		*identify_channel;
 	nvm_get_features_fn 	*get_features;
 	nvm_set_rsp_fn		*set_responsibility;
 

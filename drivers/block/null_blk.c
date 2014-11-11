@@ -323,32 +323,41 @@ static void null_request_fn(struct request_queue *q)
 	}
 }
 
-static int null_nvm_id(struct request_queue *q, struct nvm_id *nvm_id)
+static int null_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *id, u32 off,
+			nvm_id_alloc_fn *alloc_fn, struct request_queue *q)
 {
-	nvm_id->ver_id = 0x1;
-	nvm_id->nvm_type = NVM_NVMT_BLK;
-	nvm_id->nchannels = lightnvm_num_channels;
-	return 0;
-}
+	struct nvm_id_chnl *chnl;
+	int i;
+	u32 len;
 
-static int null_nvm_id_chnl(struct request_queue *q, int chnl_num,
-							struct nvm_id_chnl *ic)
-{
-	sector_t size = gb * 1024 * 1024 * 1024ULL;
+	id->ver_id = 0x1;
+	id->nvm_type = NVM_NVMT_BLK;
+	id->nchannels = lightnvm_num_channels;
 
-	sector_div(size, bs);
-	ic->queue_size = hw_queue_depth;
-	ic->gran_read = bs;
-	ic->gran_write = bs;
-	ic->gran_erase = bs * 256;
-	ic->oob_size = 0;
-	ic->t_r = ic->t_sqr = 25000; /* 25us */
-	ic->t_w = ic->t_sqw = 500000; /* 500us */
-	ic->t_e = 1500000; /* 1.500us */
-	ic->io_sched = NVM_IOSCHED_CHANNEL;
-	ic->laddr_begin = 0;
-	ic->laddr_end = size / 8;
+	len = alloc_fn(chnls, off, id->nchannels - off);
+	if (!len || !(*chnls))
+		return -ENOMEM;
 
+	chnl = *chnls;
+	BUG_ON(!chnl);
+
+	for (i = 0; i < lightnvm_num_channels; i++) {
+		sector_t size = gb * 1024 * 1024 * 1024ULL;
+
+		chnl->queue_size = hw_queue_depth;
+		chnl->gran_read = bs;
+		chnl->gran_write = bs;
+		chnl->gran_erase = bs * 256;
+		chnl->oob_size = 0;
+		chnl->t_r = chnl->t_sqr = 25000; /* 25us */
+		chnl->t_w = chnl->t_sqw = 500000; /* 500us */
+		chnl->t_e = 1500000; /* 1.500us */
+		chnl->io_sched = NVM_IOSCHED_CHANNEL;
+		chnl->laddr_begin = 0;
+		chnl->laddr_end = size / 8;
+
+		chnl++;
+	}
 	return 0;
 }
 
@@ -404,7 +413,6 @@ static int null_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 
 static struct lightnvm_dev_ops null_nvm_dev_ops = {
 	.identify		= null_nvm_id,
-	.identify_channel	= null_nvm_id_chnl,
 	.get_features		= null_nvm_get_features,
 	.set_responsibility	= null_nvm_set_rsp,
 };

@@ -321,6 +321,18 @@ int nvm_queue_init(struct request_queue *q)
 	return true;
 }
 
+static u32 nvm_chnl_alloc(struct nvm_id_chnl **mem_out, u32 offset, u32 num_chnls)
+{
+	/* For now: allocate space for one channel, regardless of how many
+	 * channels the device reports */
+	BUG_ON(!mem_out);
+	*mem_out = kmalloc(sizeof(struct nvm_id_chnl), GFP_KERNEL);
+	if (!*mem_out) {
+		return 0;
+	}
+	return 1u;
+}
+
 int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 {
 	struct nvm_dev *nvm = q->nvm;
@@ -331,8 +343,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 
 	unsigned long size;
 
-	if (!ops->identify || !ops->identify_channel || !ops->get_features ||
-						!ops->set_responsibility)
+	if (!ops->identify || !ops->get_features || !ops->set_responsibility)
 		return -EINVAL;
 
 	nvm->ops = ops;
@@ -340,17 +351,11 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	if (!nvm_queue_init(q))
 		return -EINVAL;
 
-	nvm_id_chnl = kmalloc(sizeof(struct nvm_id_chnl), GFP_KERNEL);
-	if (!nvm_id_chnl) {
-		ret = -ENOMEM;
-		goto err;
-	}
-
 	_addr_cache = kmem_cache_create("nvm_addr_cache",
 				sizeof(struct nvm_addr), 0, 0, NULL);
 	if (!_addr_cache) {
 		ret = -ENOMEM;
-		goto err_memcache;
+		goto err;
 	}
 
 	nvm_register_target(&nvm_target_rrpc);
@@ -376,21 +381,16 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 		goto err_cfg;
 	}
 
-	if (nvm->ops->identify(q, &nvm_id)) {
+	/* TODO: We're limited to the same setup for each channel */
+	if (nvm->ops->identify(&nvm_id_chnl, &nvm_id, 0, nvm_chnl_alloc, q)) {
 		ret = -EINVAL;
-		goto err_cfg;
+		goto err_identify;
 	}
 
 	pr_debug("lightnvm dev: ver %u type %u chnls %u\n",
 			nvm_id.ver_id, nvm_id.nvm_type, nvm_id.nchannels);
 
 	s->nr_pools = nvm_id.nchannels;
-
-	/* TODO: We're limited to the same setup for each channel */
-	if (nvm->ops->identify_channel(q, 0, nvm_id_chnl)) {
-		ret = -EINVAL;
-		goto err_cfg;
-	}
 
 	pr_debug("lightnvm dev: qsize %llu gr %llu ge %llu begin %llu end %llu\n",
 			nvm_id_chnl->queue_size,
@@ -423,13 +423,13 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	if (s->nr_pages_per_blk > MAX_INVALID_PAGES_STORAGE * BITS_PER_LONG) {
 		pr_err("lightnvm: Num. pages per block too high. Increase MAX_INVALID_PAGES_STORAGE.");
 		ret = -EINVAL;
-		goto err_cfg;
+		goto err_identify;
 	}
 
 	ret = nvm_stor_init(nvm, s);
 	if (ret < 0) {
 		pr_err("lightnvm: cannot initialize nvm structure.");
-		goto err_cfg;
+		goto err_identify;
 	}
 
 	pr_info("lightnvm: pools: %u\n", s->nr_pools);
@@ -451,12 +451,12 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	kfree(nvm_id_chnl);
 	return 0;
 
+err_identify:
+	kfree(nvm_id_chnl);
 err_cfg:
 	kfree(s);
 err_stor:
 	kmem_cache_destroy(_addr_cache);
-err_memcache:
-	kfree(nvm_id_chnl);
 err:
 	pr_err("lightnvm: failed to initialize nvm\n");
 	return ret;

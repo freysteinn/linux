@@ -916,27 +916,13 @@ static int adapter_delete_sq(struct nvme_dev *dev, u16 sqid)
 	return adapter_delete_queue(dev, nvme_admin_delete_sq, sqid);
 }
 
-int lnvm_identify(struct nvme_dev *dev, dma_addr_t dma_addr)
+int lnvm_identify(struct nvme_dev *dev, u32 chnl_off, dma_addr_t dma_addr)
 {
 	struct nvme_command c;
 
 	memset(&c, 0, sizeof(c));
 	c.common.opcode = lnvm_admin_identify;
-	c.common.nsid = cpu_to_le32(0);
-	c.common.prp1 = cpu_to_le64(dma_addr);
-
-	return nvme_submit_admin_cmd(dev, &c, NULL);
-}
-
-int lnvm_identify_channel(struct nvme_dev *dev, unsigned nsid,
-							dma_addr_t dma_addr)
-{
-	struct nvme_command c;
-
-	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_identify_channel;
-	c.common.nsid = cpu_to_le32(nsid);
-	c.common.cdw10[0] = cpu_to_le32(nsid);
+	c.common.nsid = cpu_to_le32(chnl_off);
 	c.common.prp1 = cpu_to_le64(dma_addr);
 
 	return nvme_submit_admin_cmd(dev, &c, NULL);
@@ -1353,73 +1339,93 @@ static int nvme_shutdown_ctrl(struct nvme_dev *dev)
 	return 0;
 }
 
-static int nvme_nvm_id(struct request_queue *q, struct nvm_id *nvm_id)
+static void chnl_le_to_cpu(struct nvm_id_chnl *dst, struct nvme_lnvm_id_chnl *src)
+{
+	dst->queue_size = le64_to_cpu(src->queue_size);
+	dst->gran_read = le64_to_cpu(src->gran_read);
+	dst->gran_write = le64_to_cpu(src->gran_write);
+	dst->gran_erase = le64_to_cpu(src->gran_erase);
+	dst->oob_size = le64_to_cpu(src->oob_size);
+	dst->t_r = le32_to_cpu(src->t_r);
+	dst->t_sqr = le32_to_cpu(src->t_sqr);
+	dst->t_w = le32_to_cpu(src->t_w);
+	dst->t_sqw = le32_to_cpu(src->t_sqw);
+	dst->t_e = le32_to_cpu(src->t_e);
+	dst->io_sched = src->io_sched;
+	dst->laddr_begin = le64_to_cpu(src->laddr_begin);
+	dst->laddr_end = le64_to_cpu(src->laddr_end);
+}
+
+static int init_chnls(struct nvme_dev *dev, struct nvm_id *nvm_id,
+			struct nvm_id_chnl *chnls, struct nvme_lnvm_id *dma_buf,
+			dma_addr_t dma_addr, u32 off, u32 len)
+{
+	struct nvme_lnvm_id_chnl *chnl_src = dma_buf->chnls;
+	struct nvm_id_chnl *chnl_dst = chnls;
+	int ret;
+
+	while(len) {
+		int end = min((u32)NVME_LNVM_CHNLS_PR_REQ, len);
+		int i = 0;
+		for (; i < end; i++)
+			chnl_le_to_cpu(chnl_dst++, chnl_src++);
+
+		len -= end;
+		if (!len)
+			break;
+
+		off += end;
+		ret = lnvm_identify(dev, off, dma_addr);
+		if (ret)
+			return -EINVAL;
+		chnl_src = dma_buf->chnls;
+	}
+	return 0;
+}
+
+static int nvme_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *nvm_id, u32 off,
+		nvm_id_alloc_fn *alloc_fn, struct request_queue *q)
 {
 	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 	struct pci_dev *pdev = dev->pci_dev;
-	struct nvme_lnvm_id_ctrl *ctrl;
-	void *mem;
+	struct nvme_lnvm_id *ctrl;
 	dma_addr_t dma_addr;
 	unsigned int ret = 0;
+	u32 len;
 
-	mem = dma_alloc_coherent(&pdev->dev, 4096, &dma_addr, GFP_KERNEL);
-	if (!mem)
+	*chnls = NULL;
+
+	ctrl = dma_alloc_coherent(&pdev->dev, 4096, &dma_addr, GFP_KERNEL);
+	if (!ctrl)
 		return -ENOMEM;
 
-	ret = lnvm_identify(dev, dma_addr);
+	ret = lnvm_identify(dev, off, dma_addr);
 	if (ret) {
 		ret = -EIO;
 		goto out;
 	}
 
-	ctrl = mem;
 	nvm_id->ver_id = le16_to_cpu(ctrl->ver_id);
 	nvm_id->nvm_type = ctrl->nvm_type;
 	nvm_id->nchannels = le16_to_cpu(ctrl->nchannels);
- out:
-	dma_free_coherent(&pdev->dev, 4096, mem, dma_addr);
-	return ret;
-}
 
-
-static int nvme_nvm_id_chnl(struct request_queue *q, int chnl_id,
-							struct nvm_id_chnl *ic)
-{
-	struct nvme_ns *ns = q->queuedata;
-	struct nvme_dev *dev = ns->dev;
-	struct pci_dev *pdev = dev->pci_dev;
-	struct nvme_lnvm_id_chnl *chnl;
-	void *mem;
-	dma_addr_t dma_addr;
-	unsigned int ret = 0;
-
-	mem = dma_alloc_coherent(&pdev->dev, 4096, &dma_addr, GFP_KERNEL);
-	if (!mem)
-		return -ENOMEM;
-
-	ret = lnvm_identify_channel(dev, chnl_id, dma_addr);
-	if (ret) {
-		ret = -EIO;
+	if (nvm_id->nchannels <= off) {
+		ret = -EINVAL;
 		goto out;
 	}
 
-	chnl = mem;
-	ic->queue_size = le64_to_cpu(chnl->queue_size);
-	ic->gran_read = le64_to_cpu(chnl->gran_read);
-	ic->gran_write = le64_to_cpu(chnl->gran_write);
-	ic->gran_erase = le64_to_cpu(chnl->gran_erase);
-	ic->oob_size = le64_to_cpu(chnl->oob_size);
-	ic->t_r = le32_to_cpu(chnl->t_r);
-	ic->t_sqr = le32_to_cpu(chnl->t_sqr);
-	ic->t_w = le32_to_cpu(chnl->t_w);
-	ic->t_sqw = le32_to_cpu(chnl->t_sqw);
-	ic->t_e = le32_to_cpu(chnl->t_e);
-	ic->io_sched = chnl->io_sched;
-	ic->laddr_begin = le64_to_cpu(chnl->laddr_begin);
-	ic->laddr_end = le64_to_cpu(chnl->laddr_end);
- out:
-	dma_free_coherent(&pdev->dev, 4096, mem, dma_addr);
+	len = alloc_fn(chnls, off, nvm_id->nchannels - off);
+	if (!len || !(*chnls)) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	len = min(len, nvm_id->nchannels - off);
+	ret = init_chnls(dev, nvm_id, *chnls, ctrl, dma_addr, off, len);
+
+out:
+	dma_free_coherent(&pdev->dev, 4096, ctrl, dma_addr);
 	return ret;
 }
 
@@ -1447,7 +1453,6 @@ static struct blk_mq_ops nvme_mq_admin_ops = {
 
 static struct lightnvm_dev_ops nvme_nvm_dev_ops = {
 	.identify		= nvme_nvm_id,
-	.identify_channel	= nvme_nvm_id_chnl,
 	.get_features		= nvme_nvm_get_features,
 	.set_responsibility	= nvme_nvm_set_rsp,
 };
