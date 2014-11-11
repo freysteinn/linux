@@ -2187,7 +2187,7 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	dev->tagset.driver_data = dev;
 
 	/* LightNVM is actually per ns, but as the tagset is defined with a set
-	 * of operations for the hole device. It currently is either all or
+	 * of operations for the whole device. It currently is either all or
 	 * no lightnvm compatible name-spaces for a given device. This should
 	 * either be moved toward the nvme_queue_rq function, or allow per ns
 	 * queue_rq function to be specified.
