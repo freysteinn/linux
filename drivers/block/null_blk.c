@@ -561,8 +561,10 @@ static int null_add_dev(void)
 		nullb->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 		nullb->tag_set.driver_data = nullb;
 
-		if (queue_mode == NULL_Q_LIGHTNVM)
+		if (queue_mode == NULL_Q_LIGHTNVM) {
+			nullb->tag_set.flags &= ~BLK_MQ_F_SHOULD_MERGE;
 			nullb->tag_set.flags |= BLK_MQ_F_LIGHTNVM;
+		}
 
 		rv = blk_mq_alloc_tag_set(&nullb->tag_set);
 		if (rv)
@@ -617,6 +619,7 @@ static int null_add_dev(void)
 	disk->queue		= nullb->q;
 
 	if (queue_mode == NULL_Q_LIGHTNVM) {
+		blk_queue_max_hw_sectors(nullb->q, 8);
 		/* FIXME: error handling */
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;

@@ -2187,8 +2187,10 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	 * either be moved toward the nvme_queue_rq function, or allow per ns
 	 * queue_rq function to be specified.
 	 */
-	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM || force_lightnvm)
+	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM || force_lightnvm) {
+		dev->tagset.flags &= ~BLK_MQ_F_SHOULD_MERGE;
 		dev->tagset.flags |= BLK_MQ_F_LIGHTNVM;
+	}
 
 	if (blk_mq_alloc_tag_set(&dev->tagset))
 		goto out;
