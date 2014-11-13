@@ -1339,68 +1339,61 @@ static int nvme_shutdown_ctrl(struct nvme_dev *dev)
 	return 0;
 }
 
-static void chnl_le_to_cpu(struct nvm_id_chnl *dst, struct nvme_lnvm_id_chnl *src)
-{
-	dst->queue_size = le64_to_cpu(src->queue_size);
-	dst->gran_read = le64_to_cpu(src->gran_read);
-	dst->gran_write = le64_to_cpu(src->gran_write);
-	dst->gran_erase = le64_to_cpu(src->gran_erase);
-	dst->oob_size = le64_to_cpu(src->oob_size);
-	dst->t_r = le32_to_cpu(src->t_r);
-	dst->t_sqr = le32_to_cpu(src->t_sqr);
-	dst->t_w = le32_to_cpu(src->t_w);
-	dst->t_sqw = le32_to_cpu(src->t_sqw);
-	dst->t_e = le32_to_cpu(src->t_e);
-	dst->io_sched = src->io_sched;
-	dst->laddr_begin = le64_to_cpu(src->laddr_begin);
-	dst->laddr_end = le64_to_cpu(src->laddr_end);
-}
-
 static int init_chnls(struct nvme_dev *dev, struct nvm_id *nvm_id,
-			struct nvm_id_chnl *chnls, struct nvme_lnvm_id *dma_buf,
-			dma_addr_t dma_addr, u32 off, u32 len)
+			struct nvme_lnvm_id *dma_buf, dma_addr_t dma_addr)
 {
-	struct nvme_lnvm_id_chnl *chnl_src = dma_buf->chnls;
-	struct nvm_id_chnl *chnl_dst = chnls;
-	int ret;
+	struct nvme_lnvm_id_chnl *src = dma_buf->chnls;
+	struct nvm_id_chnl *dst = nvm_id->chnls;
+	unsigned int len = nvm_id->nchannels;
+	int i, end, off = 0;
 
-	while(len) {
-		int end = min((u32)NVME_LNVM_CHNLS_PR_REQ, len);
-		int i = 0;
-		for (; i < end; i++)
-			chnl_le_to_cpu(chnl_dst++, chnl_src++);
+	while (len) {
+		end = min((u32) NVME_LNVM_CHNLS_PR_REQ, len);
+
+		for (i = 0; i < end; i++, dst++, src++) {
+			dst->queue_size = le64_to_cpu(src->queue_size);
+			dst->gran_read = le64_to_cpu(src->gran_read);
+			dst->gran_write = le64_to_cpu(src->gran_write);
+			dst->gran_erase = le64_to_cpu(src->gran_erase);
+			dst->oob_size = le64_to_cpu(src->oob_size);
+			dst->t_r = le32_to_cpu(src->t_r);
+			dst->t_sqr = le32_to_cpu(src->t_sqr);
+			dst->t_w = le32_to_cpu(src->t_w);
+			dst->t_sqw = le32_to_cpu(src->t_sqw);
+			dst->t_e = le32_to_cpu(src->t_e);
+			dst->io_sched = src->io_sched;
+			dst->laddr_begin = le64_to_cpu(src->laddr_begin);
+			dst->laddr_end = le64_to_cpu(src->laddr_end);
+		}
 
 		len -= end;
 		if (!len)
 			break;
 
 		off += end;
-		ret = lnvm_identify(dev, off, dma_addr);
-		if (ret)
-			return -EINVAL;
-		chnl_src = dma_buf->chnls;
+
+		if (lnvm_identify(dev, off, dma_addr))
+			return -EIO;
+
+		src = dma_buf->chnls;
 	}
 	return 0;
 }
 
-static int nvme_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *nvm_id, u32 off,
-		nvm_id_alloc_fn *alloc_fn, struct request_queue *q)
+static int nvme_nvm_id(struct request_queue *q, struct nvm_id *nvm_id)
 {
 	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 	struct pci_dev *pdev = dev->pci_dev;
 	struct nvme_lnvm_id *ctrl;
 	dma_addr_t dma_addr;
-	unsigned int ret = 0;
-	u32 len;
-
-	*chnls = NULL;
+	unsigned int ret;
 
 	ctrl = dma_alloc_coherent(&pdev->dev, 4096, &dma_addr, GFP_KERNEL);
 	if (!ctrl)
 		return -ENOMEM;
 
-	ret = lnvm_identify(dev, off, dma_addr);
+	ret = lnvm_identify(dev, 0, dma_addr);
 	if (ret) {
 		ret = -EIO;
 		goto out;
@@ -1410,20 +1403,16 @@ static int nvme_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *nvm_id, u32 of
 	nvm_id->nvm_type = ctrl->nvm_type;
 	nvm_id->nchannels = le16_to_cpu(ctrl->nchannels);
 
-	if (nvm_id->nchannels <= off) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (!nvm_id->chnls)
+		nvm_id->chnls = kmalloc(sizeof(struct nvm_id_chnl)
+					* nvm_id->nchannels, GFP_KERNEL);
 
-	len = alloc_fn(chnls, off, nvm_id->nchannels - off);
-	if (!len || !(*chnls)) {
+	if (!nvm_id->chnls) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	len = min(len, nvm_id->nchannels - off);
-	ret = init_chnls(dev, nvm_id, *chnls, ctrl, dma_addr, off, len);
-
+	ret = init_chnls(dev, nvm_id, ctrl, dma_addr);
 out:
 	dma_free_coherent(&pdev->dev, 4096, ctrl, dma_addr);
 	return ret;

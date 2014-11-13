@@ -323,27 +323,25 @@ static void null_request_fn(struct request_queue *q)
 	}
 }
 
-static int null_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *id, u32 off,
-			nvm_id_alloc_fn *alloc_fn, struct request_queue *q)
+static int null_nvm_id(struct request_queue *q, struct nvm_id *id)
 {
+	sector_t size = gb * 1024 * 1024 * 1024ULL;
+	unsigned long per_chnl_size =
+				size / bs / lightnvm_num_channels;
 	struct nvm_id_chnl *chnl;
 	int i;
-	u32 len;
 
 	id->ver_id = 0x1;
 	id->nvm_type = NVM_NVMT_BLK;
 	id->nchannels = lightnvm_num_channels;
 
-	len = alloc_fn(chnls, off, id->nchannels - off);
-	if (!len || !(*chnls))
+	id->chnls = kmalloc(sizeof(struct nvm_id_chnl) * id->nchannels,
+								GFP_KERNEL);
+	if (!id->chnls)
 		return -ENOMEM;
 
-	chnl = *chnls;
-	BUG_ON(!chnl);
-
-	for (i = 0; i < lightnvm_num_channels; i++) {
-		sector_t size = gb * 1024 * 1024 * 1024ULL;
-
+	for (i = 0; i < id->nchannels; i++) {
+		chnl = &id->chnls[i];
 		chnl->queue_size = hw_queue_depth;
 		chnl->gran_read = bs;
 		chnl->gran_write = bs;
@@ -353,11 +351,10 @@ static int null_nvm_id(struct nvm_id_chnl **chnls, struct nvm_id *id, u32 off,
 		chnl->t_w = chnl->t_sqw = 500000; /* 500us */
 		chnl->t_e = 1500000; /* 1.500us */
 		chnl->io_sched = NVM_IOSCHED_CHANNEL;
-		chnl->laddr_begin = 0;
-		chnl->laddr_end = size / 8;
-
-		chnl++;
+		chnl->laddr_begin = per_chnl_size * i;
+		chnl->laddr_end = per_chnl_size * (i + 1) - 1;
 	}
+
 	return 0;
 }
 

@@ -113,10 +113,8 @@ struct nvm_pool {
 					 *  and ready for use */
 
 	unsigned int id;
-	/* References the physical start block */
-	unsigned long phy_addr_start;
-	/* References the physical end block */
-	unsigned int phy_addr_end;
+
+	struct nvm_id_chnl *chnl;
 
 	unsigned int nr_blocks;		/* end_block - start_block. */
 	unsigned int nr_free_blocks;	/* Number of unused blocks */
@@ -143,11 +141,6 @@ struct nvm_ap {
 	struct nvm_block *cur;
 	struct nvm_block *gc_cur;
 
-	/* Timings used for end_io waiting */
-	unsigned long t_read;
-	unsigned long t_write;
-	unsigned long t_erase;
-
 	unsigned long io_delayed;
 
 	/* Private field for submodules */
@@ -158,10 +151,6 @@ struct nvm_config {
 	unsigned long flags;
 
 	unsigned int gc_time; /* GC every X microseconds */
-
-	unsigned int t_read;
-	unsigned int t_write;
-	unsigned int t_erase;
 };
 
 struct nvm_inflight_request {
@@ -307,10 +296,8 @@ struct nvm_stor {
 	int nr_pages_per_blk;
 	int nr_aps;
 	int nr_aps_per_pool;
-	unsigned gran_blk;
-	unsigned gran_read;
-	unsigned gran_write;
 
+	struct nvm_id id;
 	/* Calculated/Cached values. These do not reflect the actual usuable
 	 * blocks at run-time. */
 	unsigned long nr_pages;
