@@ -22,9 +22,12 @@
 #include <linux/lightnvm.h>
 
 #include <linux/ktime.h>
-#include <trace/events/block.h>
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/nvm.h>
 
 #include "nvm.h"
+
 
 /* Defaults
  * Number of append points per pool. We assume that accesses within a pool is
@@ -88,6 +91,8 @@ int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 	if (rq->cmd_flags & REQ_NVM_MAPPED)
 		return -EINVAL;
 
+	trace_nvm_rq_map_begin(rq);
+	
 	if (blk_rq_pos(rq) / NR_PHY_IN_LOG > s->nr_pages) {
 		pr_err("lightnvm: out-of-bound address: %llu",
 					(unsigned long long) blk_rq_pos(rq));
@@ -101,6 +106,8 @@ int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 
 	if (!ret)
 		rq->cmd_flags |= (REQ_NVM|REQ_NVM_MAPPED);
+
+	trace_nvm_rq_map_end(rq);
 
 	return ret;
 }
