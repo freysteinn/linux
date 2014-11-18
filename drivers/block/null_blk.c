@@ -26,7 +26,6 @@ struct nullb_queue {
 	unsigned int queue_depth;
 
 	struct nullb_cmd *cmds;
-	struct nullb *nb;
 };
 
 struct nullb {
@@ -375,13 +374,11 @@ static int null_nvm_set_rsp(struct request_queue *q, u8 rsp, u8 val)
 static int null_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 {
 	struct nullb_cmd *cmd = blk_mq_rq_to_pdu(rq);
-	struct nullb_queue *nq = hctx->driver_data;
 
 	cmd->rq = rq;
-	cmd->nq = nq;
+	cmd->nq = hctx->driver_data;
 
 	null_handle_cmd(cmd);
-
 	return BLK_MQ_RQ_QUEUE_OK;
 }
 
@@ -392,7 +389,6 @@ static void null_init_queue(struct nullb *nullb, struct nullb_queue *nq)
 
 	init_waitqueue_head(&nq->wait);
 	nq->queue_depth = nullb->queue_depth;
-	nq->nb = nullb;
 }
 
 static int null_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
@@ -592,7 +588,6 @@ static int null_add_dev(void)
 	nullb->q->queuedata = nullb;
 
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, nullb->q);
-
 	disk = nullb->disk = alloc_disk_node(1, home_node);
 	if (!disk) {
 		rv = -ENOMEM;
@@ -609,8 +604,8 @@ static int null_add_dev(void)
 	disk->flags |= GENHD_FL_EXT_DEVT;
 	disk->major		= null_major;
 	disk->first_minor	= nullb->index;
-	disk->private_data	= nullb;
 	disk->fops		= &null_fops;
+	disk->private_data	= nullb;
 	disk->queue		= nullb->q;
 
 	if (lightnvm_enable) {
