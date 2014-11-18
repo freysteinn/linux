@@ -14,9 +14,6 @@ The following instances are possible:
   Multi-queue block-layer
     - Request-based.
     - Configurable submission queues per device.
-  LightNVM compatible
-    - Request-based.
-    - Same configuration as the multi-queue block layer.
   No block-layer (Known as bio-based)
     - Bio-based. IO requests are submitted directly to the device driver.
     - Directly accepts bio data structure and returns them.
@@ -31,7 +28,6 @@ queue_mode=[0-2]: Default: 2-Multi-queue
   0: Bio-based.
   1: Single-queue.
   2: Multi-queue.
-  3: LightNVM device with multi-queue.
 
 home_node=[0--nr_nodes]: Default: NUMA_NO_NODE
   Selects what CPU node the data structures are allocated from.
@@ -76,6 +72,9 @@ use_per_node_hctx=[0/1]: Default: 0
      queue for each CPU node in the system.
 
 IV: LightNVM specific parameters
+
+lightnvm_enable=[x]: Default: 0
+  Enable LightNVM for null block devices. Requires blk-mq to be used.
 
 lightnvm_num_channels=[x]: Default: 1
   Number of LightNVM channels that are exposed to the LightNVM driver.
