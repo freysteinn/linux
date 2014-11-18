@@ -340,15 +340,11 @@ enum nvme_admin_opcode {
 	nvme_admin_format_nvm		= 0x80,
 	nvme_admin_security_send	= 0x81,
 	nvme_admin_security_recv	= 0x82,
-};
 
-enum lnvm_admin_opcode {
 	lnvm_admin_identify		= 0xc0,
-	lnvm_admin_identify_channel	= 0xc1,
-	lnvm_admin_get_features		= 0xc2,
-	lnvm_admin_set_responsibility	= 0xc3,
-	lnvm_admin_get_l2p_tbl		= 0xc4,
-	lnvm_admin_get_p2l_tbl		= 0xc5,
+	lnvm_admin_get_features		= 0xc1,
+	lnvm_admin_set_responsibility	= 0xc2,
+	lnvm_admin_get_l2p_tbl		= 0xc3,
 };
 
 enum {
@@ -565,7 +561,6 @@ struct nvme_user_io {
 	__u32	reftag;
 	__u16	apptag;
 	__u16	appmask;
-	__u32	host_lba;
 };
 
 struct nvme_admin_cmd {

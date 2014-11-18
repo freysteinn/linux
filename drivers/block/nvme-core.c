@@ -1643,7 +1643,6 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 		iod = nvme_map_user_pages(dev, io.opcode & 1, io.addr, length);
 		break;
 	case lnvm_admin_identify:
-	case lnvm_admin_identify_channel:
 	case lnvm_admin_get_features:
 	case lnvm_admin_set_responsibility:
 		return nvme_nvm_submit_io(ns, &io);

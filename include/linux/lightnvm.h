@@ -104,14 +104,10 @@ unsigned int nvm_cmd_size(void);
 
 int nvm_init(struct nvm_dev *);
 void nvm_exit(struct nvm_dev *);
-
 int nvm_map_rq(struct nvm_dev *, struct request *);
 void nvm_complete_request(struct nvm_dev *, struct request *, int err);
 
 int nvm_add_sysfs(struct device *);
 void nvm_remove_sysfs(struct device *);
-
-/* kv.c */
-int nvm_kv_rq(struct nvm_dev *, void *arg);
 
 #endif
