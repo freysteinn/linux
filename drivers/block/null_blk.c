@@ -608,7 +608,7 @@ static int null_add_dev(void)
 	disk->private_data	= nullb;
 	disk->queue		= nullb->q;
 
-	if (lightnvm_enable) {
+	if (lightnvm_enable && queue_mode == NULL_Q_MQ) {
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
 
