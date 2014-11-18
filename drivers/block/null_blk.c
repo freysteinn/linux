@@ -35,7 +35,6 @@ struct nullb {
 	struct request_queue *q;
 	struct gendisk *disk;
 	struct blk_mq_tag_set tag_set;
-	struct nvm_dev *nvm_dev;
 	struct hrtimer timer;
 	unsigned int queue_depth;
 	spinlock_t lock;
