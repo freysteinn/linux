@@ -141,7 +141,6 @@ struct nvme_cmd_info {
 	void *ctx;
 	int aborted;
 	struct nvme_queue *nvmeq;
-	struct nvme_ns *ns;
 };
 
 static int nvme_admin_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
@@ -598,7 +597,6 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *req)
 	req->special = iod;
 
 	nvme_set_info(cmd, iod, req_completion);
-	cmd->ns = ns;
 
 	if (req->cmd_flags & REQ_DISCARD) {
 		void *range;
