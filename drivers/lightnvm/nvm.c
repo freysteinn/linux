@@ -88,16 +88,7 @@ int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 	struct nvm_stor *s = dev->stor;
 	int ret;
 
-	if (rq->cmd_flags & REQ_NVM_MAPPED)
-		return -EINVAL;
-
 	trace_nvm_rq_map_begin(rq);
-	
-	if (blk_rq_pos(rq) / NR_PHY_IN_LOG > s->nr_pages) {
-		pr_err("lightnvm: out-of-bound address: %llu",
-					(unsigned long long) blk_rq_pos(rq));
-		return -EINVAL;
-	}
 
 	if (rq_data_dir(rq) == WRITE)
 		ret = s->type->write_rq(s, rq);
@@ -321,35 +312,17 @@ err_rev_trans_map:
 #define NVM_NUM_BLOCKS 256
 #define NVM_NUM_PAGES 256
 
-int nvm_queue_init(struct request_queue *q)
-{
-	int nr_sectors_per_page = 8; /* 512 bytes */
-
-	if (queue_logical_block_size(q) > (nr_sectors_per_page << 9)) {
-		pr_err("nvm: logical page size not supported by hardware");
-		return false;
-	}
-
-	return true;
-}
-
 void nvm_free_nvm_id(struct nvm_id *id)
 {
 	kfree(id->chnls);
 }
 
-int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
+int nvm_init(struct nvm_dev *nvm)
 {
-	struct nvm_dev *nvm = q->nvm;
 	struct nvm_stor *s;
 	int ret = 0;
 
-	if (!ops->identify || !ops->get_features || !ops->set_responsibility)
-		return -EINVAL;
-
-	nvm->ops = ops;
-
-	if (!nvm_queue_init(q))
+	if (!nvm->q || !nvm->ops)
 		return -EINVAL;
 
 	down_write(&_lock);
@@ -388,7 +361,7 @@ int nvm_init(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	}
 
 	/* TODO: We're limited to the same setup for each channel */
-	if (nvm->ops->identify(q, &s->id)) {
+	if (nvm->ops->identify(nvm->q, &s->id)) {
 		ret = -EINVAL;
 		goto err_cfg;
 	}
@@ -445,13 +418,9 @@ err:
 }
 EXPORT_SYMBOL_GPL(nvm_init);
 
-void nvm_exit(struct request_queue *q)
+void nvm_exit(struct nvm_dev *nvm)
 {
-	struct nvm_dev *nvm = q->nvm;
 	struct nvm_stor *s;
-
-	if (!nvm)
-		return;
 
 	s = nvm->stor;
 	if (!s)

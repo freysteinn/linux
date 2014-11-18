@@ -430,7 +430,7 @@ static void null_del_dev(struct nullb *nullb)
 	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM)) {
 		if (queue_mode == NULL_Q_LIGHTNVM) {
 			nvm_remove_sysfs(nullb->disk->private_data);
-			nvm_exit(nullb->q);
+			nvm_exit(nullb->q->nvm);
 		}
 		blk_mq_free_tag_set(&nullb->tag_set);
 	}

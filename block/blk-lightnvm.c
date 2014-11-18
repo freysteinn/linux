@@ -25,37 +25,46 @@
 
 int blk_lightnvm_register(struct request_queue *q, struct lightnvm_dev_ops *ops)
 {
+	struct nvm_dev *nvm;
 	int ret;
 
-	if (q->nvm)
+	if (!ops->identify || !ops->get_features || !ops->set_responsibility)
 		return -EINVAL;
 
-	q->nvm = kmalloc(sizeof(struct nvm_dev), GFP_KERNEL);
-	if (!q->nvm)
+	nvm = kmalloc(sizeof(struct nvm_dev), GFP_KERNEL);
+	if (!nvm)
 		return -ENOMEM;
 
-	q->nvm->q = q;
+	nvm->q = q;
+	nvm->ops = ops;
 
-	ret = nvm_init(q, ops);
+	ret = nvm_init(nvm);
 	if (ret)
 		goto err_init;
 
+	q->nvm = nvm;
+
 	return 0;
 err_init:
-	kfree(q->nvm);
-	q->nvm = NULL;
+	kfree(nvm);
 	return ret;
 }
 EXPORT_SYMBOL(blk_lightnvm_register);
 
 void blk_lightnvm_unregister(struct request_queue *q)
 {
-	nvm_exit(q);
+	if (!q->nvm)
+		return;
+
+	nvm_exit(q->nvm);
 }
 EXPORT_SYMBOL(blk_lightnvm_unregister);
 
 int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq)
 {
+	if (rq->cmd_flags & REQ_NVM_MAPPED)
+		return -EINVAL;
+
 	return nvm_map_rq(nvm, rq);
 }
 
