@@ -944,6 +944,7 @@ int nvme_identify(struct nvme_dev *dev, unsigned nsid, unsigned cns,
 							dma_addr_t dma_addr)
 {
 	struct nvme_command c;
+
 	memset(&c, 0, sizeof(c));
 	c.identify.opcode = nvme_admin_identify;
 	c.identify.nsid = cpu_to_le32(nsid);
@@ -1934,7 +1935,6 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	ns = kzalloc_node(sizeof(*ns), GFP_KERNEL, node);
 	if (!ns)
 		return NULL;
-
 	ns->queue = blk_mq_init_queue(&dev->tagset);
 	if (!ns->queue)
 		goto out_free_ns;
@@ -1943,7 +1943,6 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	queue_flag_set_unlocked(QUEUE_FLAG_SG_GAPS, ns->queue);
 	queue_flag_clear_unlocked(QUEUE_FLAG_IO_STAT, ns->queue);
 	ns->dev = dev;
-
 	ns->queue->queuedata = ns;
 
 	disk = alloc_disk_node(0, node);
@@ -1985,6 +1984,7 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	}
 
 	return ns;
+
  out_put_disk:
 	put_disk(disk);
  out_free_queue:
@@ -2164,9 +2164,7 @@ static int nvme_dev_add(struct nvme_dev *dev)
 
 	/* LightNVM is actually per ns, but as the tagset is defined with a set
 	 * of operations for the whole device. It currently is either all or
-	 * no lightnvm compatible name-spaces for a given device. This should
-	 * either be moved toward the nvme_queue_rq function, or allow per ns
-	 * queue_rq function to be specified.
+	 * no lightnvm compatible name-spaces for a given device.
 	 */
 	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM) {
 		dev->tagset.flags &= ~BLK_MQ_F_SHOULD_MERGE;
