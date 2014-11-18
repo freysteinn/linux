@@ -551,6 +551,10 @@ int blk_register_queue(struct gendisk *disk)
 	if (WARN_ON(!q))
 		return -ENXIO;
 
+	/* FIXME: How to get from queue to disk (used by lightnvm gc)? */
+	if (q->nvm)
+		q->nvm->disk = disk;
+
 	/*
 	 * Initialization must be complete by now.  Finish the initial
 	 * bypass from queue allocation.

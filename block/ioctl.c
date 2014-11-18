@@ -427,8 +427,6 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKTRACETEARDOWN:
 		ret = blk_trace_ioctl(bdev, cmd, (char __user *) arg);
 		break;
-	case LIGHTNVM_IOCTL_KV:
-		ret = blk_lightnvm_ioctl_kv(bdev, cmd, (char __user *) arg);
 	default:
 		ret = __blkdev_driver_ioctl(bdev, mode, cmd, arg);
 	}

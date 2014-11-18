@@ -1988,7 +1988,6 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 			goto out_put_disk;
 
 		/* FIXME: This will be handled later by ns */
-		ns->queue->nvm->disk = disk;
 		ns->queue->nvm->drv_cmd_size = sizeof(struct nvme_cmd_info);
 	}
 

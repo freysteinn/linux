@@ -654,7 +654,6 @@ void del_gendisk(struct gendisk *disk)
 
 	sysfs_remove_link(&disk_to_dev(disk)->kobj, "bdi");
 	bdi_unregister(&disk->queue->backing_dev_info);
-	blk_lightnvm_unregister(disk);
 	blk_unregister_queue(disk);
 	blk_unregister_region(disk_devt(disk), disk->minors);
 

@@ -618,7 +618,6 @@ static int null_add_dev(void)
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
 
-		nullb->q->nvm->disk = disk;
 		nullb->q->nvm->drv_cmd_size = sizeof(struct nullb_cmd);
 	}
 

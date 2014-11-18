@@ -58,7 +58,6 @@ void blk_lightnvm_unregister(struct request_queue *q)
 
 	nvm_exit(q->nvm);
 }
-EXPORT_SYMBOL(blk_lightnvm_unregister);
 
 int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq)
 {
@@ -76,11 +75,4 @@ int blk_lightnvm_init_sysfs(struct device *dev)
 void blk_lightnvm_remove_sysfs(struct device *dev)
 {
 	nvm_remove_sysfs(dev);
-}
-
-int blk_lightnvm_ioctl_kv(struct block_device *bdev,
-					unsigned int cmd, char __user *arg)
-{
-	//return nvm_kv_rq(dev, (void *)arg);
-	return 0;
 }

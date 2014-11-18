@@ -1624,29 +1624,14 @@ static inline bool blk_integrity_is_initialized(struct gendisk *g)
 
 #ifdef CONFIG_LIGHTNVM
 struct lightnvm_dev_ops;
-
 extern int blk_lightnvm_register(struct request_queue *, struct lightnvm_dev_ops *);
-extern void blk_lightnvm_unregister(struct request_queue *);
-extern int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq);
-extern int blk_lightnvm_init_sysfs(struct device *);
-extern void blk_lightnvm_remove_sysfs(struct device *);
-extern int blk_lightnvm_ioctl_kv(struct block_device *bdev,
-						unsigned cmd, char __user *arg);
 #else
+struct lightnvm_dev_ops;
 static int blk_lightnvm_register(struct request_queue *q, struct lightnvm_dev_ops *ops)
 {
 	return -EINVAL;
 }
-static void blk_lightnvm_unregister(struct request_queue *q) { }
-static int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq) { return -EINVAL; }
-static int blk_lightnvm_init_sysfs(struct device *) { return 0; }
-static void blk_lightnvm_remove_sysfs(struct device *) { }
-static int blk_lightnvm_ioctl_kv(struct block_device *bdev,
-						unsigned cmd, char __user *arg)
-{
-	return -ENOTTY;
-}
-#endif
+#endif /* CONFIG_LIGHTNVM */
 
 struct block_device_operations {
 	int (*open) (struct block_device *, fmode_t);
