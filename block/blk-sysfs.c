@@ -7,6 +7,7 @@
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/blktrace_api.h>
+#include <linux/lightnvm.h>
 #include <linux/blk-mq.h>
 
 #include "blk.h"
@@ -550,6 +551,10 @@ int blk_register_queue(struct gendisk *disk)
 	if (WARN_ON(!q))
 		return -ENXIO;
 
+	/* FIXME: How to get from queue to disk (used by lightnvm gc)? */
+	if (q->nvm)
+		q->nvm->disk = disk;
+
 	/*
 	 * Initialization must be complete by now.  Finish the initial
 	 * bypass from queue allocation.
@@ -560,6 +565,10 @@ int blk_register_queue(struct gendisk *disk)
 	}
 
 	ret = blk_trace_init_sysfs(dev);
+	if (ret)
+		return ret;
+
+	ret = blk_lightnvm_init_sysfs(dev);
 	if (ret)
 		return ret;
 
@@ -596,6 +605,9 @@ void blk_unregister_queue(struct gendisk *disk)
 	if (WARN_ON(!q))
 		return;
 
+	if (q->nvm)
+		blk_lightnvm_unregister(q);
+
 	if (q->mq_ops)
 		blk_mq_unregister_disk(disk);
 
@@ -604,6 +616,7 @@ void blk_unregister_queue(struct gendisk *disk)
 
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);
 	kobject_del(&q->kobj);
+	blk_lightnvm_remove_sysfs(disk_to_dev(disk));
 	blk_trace_remove_sysfs(disk_to_dev(disk));
 	kobject_put(&disk_to_dev(disk)->kobj);
 }
