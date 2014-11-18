@@ -609,8 +609,6 @@ static int null_add_dev(void)
 	disk->queue		= nullb->q;
 
 	if (lightnvm_enable) {
-		blk_queue_max_hw_sectors(nullb->q, 8);
-
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
 

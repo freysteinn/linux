@@ -93,6 +93,7 @@ struct nvm_dev {
 	struct gendisk *disk;
 	struct request_queue *q;
 
+	/* LightNVM stores extra data after the private driver data */
 	unsigned int drv_cmd_size;
 
 	void *stor;

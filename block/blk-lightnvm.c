@@ -31,6 +31,9 @@ int blk_lightnvm_register(struct request_queue *q, struct lightnvm_dev_ops *ops)
 	if (!ops->identify || !ops->get_features || !ops->set_responsibility)
 		return -EINVAL;
 
+	/* TODO: LightNVM does not yet support multi-page IOs. */
+	blk_queue_max_hw_sectors(q, queue_logical_block_size(q) >> 9);
+
 	nvm = kmalloc(sizeof(struct nvm_dev), GFP_KERNEL);
 	if (!nvm)
 		return -ENOMEM;

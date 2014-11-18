@@ -61,10 +61,6 @@ static unsigned char retry_time = 30;
 module_param(retry_time, byte, 0644);
 MODULE_PARM_DESC(retry_time, "time in seconds to retry failed I/O");
 
-static unsigned char force_lightnvm;
-module_param(force_lightnvm, byte, 0644);
-MODULE_PARM_DESC(force_lightnvm, "force initialization of lightnvm");
-
 static int nvme_major;
 module_param(nvme_major, int, 0);
 
@@ -1980,10 +1976,7 @@ static struct nvme_ns *nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid,
 	if (dev->oncs & NVME_CTRL_ONCS_DSM)
 		nvme_config_discard(ns);
 
-	if (id->nsfeat & NVME_NS_FEAT_LIGHTNVM || force_lightnvm) {
-		/* FIXME: Limit to 4K until LightNVM supports multiple IOs */
-		blk_queue_max_hw_sectors(ns->queue, 8);
-
+	if (id->nsfeat & NVME_NS_FEAT_LIGHTNVM) {
 		if (blk_lightnvm_register(ns->queue, &nvme_nvm_dev_ops))
 			goto out_put_disk;
 
@@ -2175,7 +2168,7 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	 * either be moved toward the nvme_queue_rq function, or allow per ns
 	 * queue_rq function to be specified.
 	 */
-	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM || force_lightnvm) {
+	if (dev->oacs & NVME_CTRL_OACS_LIGHTNVM) {
 		dev->tagset.flags &= ~BLK_MQ_F_SHOULD_MERGE;
 		dev->tagset.flags |= BLK_MQ_F_LIGHTNVM;
 	}

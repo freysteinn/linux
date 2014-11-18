@@ -567,6 +567,7 @@ static void __nvm_unlock_rq_sgmt(struct nvm_stor *s, struct nvm_inflight *inflig
 		if (request_equals(r, laddr_start, laddr_end))
 			break;
 
+	/* On bug -> The submission size and complete size properly differs */
 	BUG_ON(!r || !request_equals(r, laddr_start, laddr_end));
 
 	r->l_start = r->l_end = LTOP_POISON;
