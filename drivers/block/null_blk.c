@@ -69,7 +69,6 @@ enum {
 	NULL_Q_BIO		= 0,
 	NULL_Q_RQ		= 1,
 	NULL_Q_MQ		= 2,
-	NULL_Q_LIGHTNVM		= 4,
 };
 
 static int submit_queues;
@@ -82,7 +81,7 @@ MODULE_PARM_DESC(home_node, "Home node for the device");
 
 static int queue_mode = NULL_Q_MQ;
 module_param(queue_mode, int, S_IRUGO);
-MODULE_PARM_DESC(queue_mode, "Block interface to use (0=bio,1=rq,2=multiqueue,4=lightnvm)");
+MODULE_PARM_DESC(queue_mode, "Block interface to use (0=bio,1=rq,2=multiqueue)");
 
 static int gb = 250;
 module_param(gb, int, S_IRUGO);
@@ -111,6 +110,10 @@ MODULE_PARM_DESC(hw_queue_depth, "Queue depth for each hardware queue. Default: 
 static bool use_per_node_hctx = false;
 module_param(use_per_node_hctx, bool, S_IRUGO);
 MODULE_PARM_DESC(use_per_node_hctx, "Use per-node allocation for hardware context queues. Default: false");
+
+static bool lightnvm_enable = false;
+module_param(lightnvm_enable, bool, S_IRUGO);
+MODULE_PARM_DESC(lightnvm_enable, "Enable LightNVM. Default: false");
 
 static int lightnvm_num_channels = 1;
 module_param(lightnvm_num_channels, int, S_IRUGO);
@@ -184,7 +187,6 @@ static void end_cmd(struct nullb_cmd *cmd)
 {
 	switch (queue_mode)  {
 	case NULL_Q_MQ:
-	case NULL_Q_LIGHTNVM:
 		blk_mq_end_io(cmd->rq, 0);
 		return;
 	case NULL_Q_RQ:
@@ -235,7 +237,7 @@ static void null_cmd_end_timer(struct nullb_cmd *cmd)
 
 static void null_softirq_done_fn(struct request *rq)
 {
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM))
+	if (queue_mode == NULL_Q_MQ)
 		end_cmd(blk_mq_rq_to_pdu(rq));
 	else
 		end_cmd(rq->special);
@@ -247,7 +249,6 @@ static inline void null_handle_cmd(struct nullb_cmd *cmd)
 	switch (irqmode) {
 	case NULL_IRQ_SOFTIRQ:
 		switch (queue_mode)  {
-		case NULL_Q_LIGHTNVM:
 		case NULL_Q_MQ:
 			blk_mq_complete_request(cmd->rq);
 			break;
@@ -426,7 +427,7 @@ static void null_del_dev(struct nullb *nullb)
 
 	del_gendisk(nullb->disk);
 	blk_cleanup_queue(nullb->q);
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM))
+	if (queue_mode == NULL_Q_MQ)
 		blk_mq_free_tag_set(&nullb->tag_set);
 	put_disk(nullb->disk);
 	kfree(nullb);
@@ -539,14 +540,14 @@ static int null_add_dev(void)
 
 	spin_lock_init(&nullb->lock);
 
-	if ((queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM)) && use_per_node_hctx)
+	if (queue_mode == NULL_Q_MQ && use_per_node_hctx)
 		submit_queues = nr_online_nodes;
 
 	rv = setup_queues(nullb);
 	if (rv)
 		goto out_free_nullb;
 
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM)) {
+	if (queue_mode == NULL_Q_MQ) {
 		nullb->tag_set.ops = &null_mq_ops;
 		nullb->tag_set.nr_hw_queues = submit_queues;
 		nullb->tag_set.queue_depth = hw_queue_depth;
@@ -555,7 +556,7 @@ static int null_add_dev(void)
 		nullb->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 		nullb->tag_set.driver_data = nullb;
 
-		if (queue_mode == NULL_Q_LIGHTNVM) {
+		if (lightnvm_enable) {
 			nullb->tag_set.flags &= ~BLK_MQ_F_SHOULD_MERGE;
 			nullb->tag_set.flags |= BLK_MQ_F_LIGHTNVM;
 		}
@@ -612,7 +613,7 @@ static int null_add_dev(void)
 	disk->fops		= &null_fops;
 	disk->queue		= nullb->q;
 
-	if (queue_mode == NULL_Q_LIGHTNVM) {
+	if (lightnvm_enable) {
 		blk_queue_max_hw_sectors(nullb->q, 8);
 
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
@@ -635,7 +636,7 @@ out_cleanup_nvm:
 out_cleanup_blk_queue:
 	blk_cleanup_queue(nullb->q);
 out_cleanup_tags:
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM))
+	if (queue_mode == NULL_Q_MQ)
 		blk_mq_free_tag_set(&nullb->tag_set);
 out_cleanup_queues:
 	cleanup_queues(nullb);
@@ -655,7 +656,7 @@ static int __init null_init(void)
 		bs = PAGE_SIZE;
 	}
 
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM) && use_per_node_hctx) {
+	if (queue_mode == NULL_Q_MQ && use_per_node_hctx) {
 		if (submit_queues < nr_online_nodes) {
 			pr_warn("null_blk: submit_queues param is set to %u.",
 							nr_online_nodes);
