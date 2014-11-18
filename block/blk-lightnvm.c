@@ -68,6 +68,16 @@ int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq)
 	return nvm_map_rq(nvm, rq);
 }
 
+int blk_lightnvm_init_sysfs(struct device *dev)
+{
+	return nvm_add_sysfs(dev);
+}
+
+void blk_lightnvm_remove_sysfs(struct device *dev)
+{
+	nvm_remove_sysfs(dev);
+}
+
 int blk_lightnvm_ioctl_kv(struct block_device *bdev,
 					unsigned int cmd, char __user *arg)
 {

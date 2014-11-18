@@ -2202,11 +2202,8 @@ static int nvme_dev_add(struct nvme_dev *dev)
 		if (ns)
 			list_add_tail(&ns->list, &dev->namespaces);
 	}
-	list_for_each_entry(ns, &dev->namespaces, list) {
+	list_for_each_entry(ns, &dev->namespaces, list)
 		add_disk(ns->disk);
-		if (ns->queue->nvm)
-			nvm_add_sysfs(ns->queue->nvm);
-	}
 	res = 0;
 
  out:
@@ -2529,8 +2526,6 @@ static void nvme_free_namespaces(struct nvme_dev *dev)
 	struct nvme_ns *ns, *next;
 
 	list_for_each_entry_safe(ns, next, &dev->namespaces, list) {
-		if (ns->queue->nvm)
-			nvm_exit(ns->queue);
 		list_del(&ns->list);
 		put_disk(ns->disk);
 		kfree(ns);

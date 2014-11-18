@@ -47,27 +47,16 @@ static struct attribute_group nvm_attribute_group = {
 	.attrs = nvm_attrs,
 };
 
-void nvm_remove_sysfs(struct nvm_dev *nvm)
+void nvm_remove_sysfs(struct device *dev)
 {
-	struct device *dev;
-
-	if (!nvm || !nvm->disk)
-		return;
-
-	dev = disk_to_dev(nvm->disk);
 	sysfs_remove_group(&dev->kobj, &nvm_attribute_group);
 }
 EXPORT_SYMBOL_GPL(nvm_remove_sysfs);
 
-int nvm_add_sysfs(struct nvm_dev *nvm)
+int nvm_add_sysfs(struct device *dev)
 {
 	int ret;
-	struct device *dev;
 
-	if (!nvm || !nvm->disk)
-		return 0;
-
-	dev = disk_to_dev(nvm->disk);
 	ret = sysfs_create_group(&dev->kobj, &nvm_attribute_group);
 	if (ret)
 		return ret;

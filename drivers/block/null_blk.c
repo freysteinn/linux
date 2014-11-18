@@ -427,13 +427,8 @@ static void null_del_dev(struct nullb *nullb)
 
 	del_gendisk(nullb->disk);
 	blk_cleanup_queue(nullb->q);
-	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM)) {
-		if (queue_mode == NULL_Q_LIGHTNVM) {
-			nvm_remove_sysfs(nullb->disk->private_data);
-			nvm_exit(nullb->q->nvm);
-		}
+	if (queue_mode & (NULL_Q_MQ|NULL_Q_LIGHTNVM))
 		blk_mq_free_tag_set(&nullb->tag_set);
-	}
 	put_disk(nullb->disk);
 	kfree(nullb);
 }
@@ -620,7 +615,7 @@ static int null_add_dev(void)
 
 	if (queue_mode == NULL_Q_LIGHTNVM) {
 		blk_queue_max_hw_sectors(nullb->q, 8);
-		/* FIXME: error handling */
+
 		if (blk_lightnvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
 
@@ -635,8 +630,6 @@ static int null_add_dev(void)
 
 	sprintf(disk->disk_name, "nullb%d", nullb->index);
 	add_disk(disk);
-	if (queue_mode == NULL_Q_LIGHTNVM)
-		nvm_add_sysfs(nullb->q->nvm);
 	return 0;
 
 out_cleanup_nvm:
