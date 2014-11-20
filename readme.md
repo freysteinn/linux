@@ -17,3 +17,7 @@ anything else.
 
 LightNVM is currently hooked up through the null_blk and NVMe driver. The NVMe
 extension allows development using the LightNVM-extended QEMU implementation.
+
+# How to run 
+
+Follow the how to at https://github.com/OpenChannelSSD/linux/wiki
