@@ -317,6 +317,22 @@ void nvm_free_nvm_id(struct nvm_id *id)
 	kfree(id->chnls);
 }
 
+static int nvm_l2p_tbl_init(struct nvm_stor *s, u64 slba, u64 nlb,
+								__le64 *tbl_sgmt)
+{
+	struct nvm_addr *a = s->trans_map + slba;
+	struct nvm_rev_addr *ra = s->rev_trans_map;
+	u64 i;
+
+	/* TODO 'struct nvm_block' needs to reflect the state we get from here */
+	for (i = 0; i < nlb; i++) {
+		u64 pba = le64_to_cpu(tbl_sgmt[i]);
+		a[i].addr = pba;
+		ra[pba].addr = slba + i;
+	}
+	return 0;
+}
+
 int nvm_init(struct nvm_dev *nvm)
 {
 	struct nvm_stor *s;
@@ -391,6 +407,12 @@ int nvm_init(struct nvm_dev *nvm)
 	ret = nvm_stor_init(nvm, s);
 	if (ret) {
 		pr_err("lightnvm: cannot initialize nvm structure.");
+		goto err_init;
+	}
+
+	ret = nvm->ops->get_l2p_tbl(nvm->q, 0, s->nr_pages, nvm_l2p_tbl_init, s);
+	if (ret) {
+		pr_err("lightnvm: cannot read L2P table.");
 		goto err_init;
 	}
 

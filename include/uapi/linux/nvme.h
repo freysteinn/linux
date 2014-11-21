@@ -277,6 +277,20 @@ struct nvme_lnvm_rw_command {
 	__le64			phys_addr;
 };
 
+struct nvme_lnvm_l2ptbl_command {
+	__u8			opcode;
+	__u8			flags;
+	__u16			command_id;
+	__le32			nsid;
+	__le32			cdw2[4];
+	__le64			prp1;
+	__le64			prp2;
+	__le64			slba;
+	__le32			nlb;
+	__u16			prp1_len;
+	__le16			cdw14[5];
+};
+
 enum {
 	NVME_RW_LR			= 1 << 15,
 	NVME_RW_FUA			= 1 << 14,
@@ -497,6 +511,7 @@ struct nvme_command {
 		struct nvme_abort_cmd abort;
 		struct nvme_lnvm_identify lnvm_identify;
 		struct nvme_lnvm_rw_command lnvm_rw;
+		struct nvme_lnvm_l2ptbl_command lnvm_l2p;
 	};
 };
 
