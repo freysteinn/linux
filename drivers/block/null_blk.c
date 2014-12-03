@@ -562,6 +562,12 @@ static int null_add_dev(void)
 		if (lightnvm_enable) {
 			nullb->tag_set.flags &= ~BLK_MQ_F_SHOULD_MERGE;
 			nullb->tag_set.flags |= BLK_MQ_F_LIGHTNVM;
+
+			if (bs != 4096) {
+				pr_warn("null_blk: only 4K block is supported for LightNVM. bs is set to 4K.\n");
+				bs = 4096;
+			}
+
 		}
 
 		rv = blk_mq_alloc_tag_set(&nullb->tag_set);
