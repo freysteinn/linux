@@ -322,11 +322,23 @@ static int nvm_l2p_tbl_init(struct nvm_stor *s, u64 slba, u64 nlb,
 {
 	struct nvm_addr *a = s->trans_map + slba;
 	struct nvm_rev_addr *ra = s->rev_trans_map;
+	u64 elba = slba + nlb;
 	u64 i;
+
+	if (unlikely(elba > s->nr_pages)) {
+		pr_err("lightnvm: L2P data from device is out of bounds - stopping!\n");
+		return -EINVAL;
+	}
 
 	/* TODO 'struct nvm_block' needs to reflect the state we get from here */
 	for (i = 0; i < nlb; i++) {
 		u64 pba = le64_to_cpu(tbl_sgmt[i]);
+		/* LNVM treats address-spaces as silos, i.e. LBA and PBA are
+		 * equally large and zero-indexed. */
+		if (unlikely(elba <= pba && pba != U64_MAX)) {
+			pr_err("lightnvm: L2P data entry is out of bounds - stopping!\n");
+			return -EINVAL;
+		}
 		a[i].addr = pba;
 		ra[pba].addr = slba + i;
 	}
