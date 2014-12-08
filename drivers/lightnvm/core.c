@@ -8,14 +8,39 @@ static void invalidate_block_page(struct nvm_stor *s, struct nvm_addr *p)
 	unsigned int page_offset;
 
 	NVM_ASSERT(spin_is_locked(&s->rev_lock));
+	if (!block)
+		return;
 
 	spin_lock(&block->lock);
-
 	page_offset = p->addr % s->nr_pages_per_blk;
 	WARN_ON(test_and_set_bit(page_offset, block->invalid_pages));
 	block->nr_invalid_pages++;
-
 	spin_unlock(&block->lock);
+}
+
+static inline void __nvm_page_invalidate(struct nvm_stor *s, struct nvm_addr *gp)
+{
+	NVM_ASSERT(spin_is_locked(&s->rev_lock));
+	if (gp->addr == LTOP_EMPTY)
+		return;
+
+	invalidate_block_page(s, gp);
+	s->rev_trans_map[gp->addr].addr = LTOP_POISON;
+}
+
+void nvm_invalidate_range(struct nvm_stor *s, sector_t slba, unsigned len)
+{
+	sector_t i;
+
+	spin_lock(&s->rev_lock);
+
+	for (i = slba; i < slba+len; i++) {
+		struct nvm_addr *gp = &s->trans_map[i];
+
+		__nvm_page_invalidate(s, gp);
+		gp->block = NULL;
+	}
+	spin_unlock(&s->rev_lock);
 }
 
 void nvm_update_map(struct nvm_stor *s, sector_t l_addr, struct nvm_addr *p,
@@ -30,8 +55,7 @@ void nvm_update_map(struct nvm_stor *s, sector_t l_addr, struct nvm_addr *p,
 	gp = &s->trans_map[l_addr];
 	spin_lock(&s->rev_lock);
 	if (gp->block) {
-		invalidate_block_page(s, gp);
-		s->rev_trans_map[gp->addr].addr = LTOP_POISON;
+		__nvm_page_invalidate(s, gp);
 	}
 
 	gp->addr = p->addr;
