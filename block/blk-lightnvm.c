@@ -63,12 +63,15 @@ void blk_lightnvm_unregister(struct request_queue *q)
 	nvm_exit(q->nvm);
 }
 
-int blk_lightnvm_map(struct nvm_dev *nvm, struct request *rq)
-{
-	if (rq->cmd_flags & REQ_NVM_MAPPED)
-		return -EINVAL;
+int blk_lightnvm_handle(struct nvm_dev *nvm, struct request *rq) {
+	int ret = nvm_process_rq(rq->q->nvm, rq);
 
-	return nvm_map_rq(nvm, rq);
+	if (ret & (NVM_RQ_OK | NVM_RQ_QUEUE)) {
+		return 0;
+	} else {
+		blk_mq_end_io(rq, (ret & NVM_RQ_OK) ? 0 : -EIO);
+		return 1;
+	}
 }
 
 int blk_lightnvm_init_sysfs(struct device *dev)

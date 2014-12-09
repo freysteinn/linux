@@ -352,6 +352,7 @@ void nvm_unregister_target(struct nvm_target_type *t);
 struct nvm_target_type *find_nvm_target_type(const char *name);
 
 /* core.c */
+void nvm_invalidate_range(struct nvm_stor *s, sector_t slba, unsigned len);
 /*   Helpers */
 void nvm_set_ap_cur(struct nvm_ap *, struct nvm_block *);
 sector_t nvm_alloc_phys_addr(struct nvm_block *);

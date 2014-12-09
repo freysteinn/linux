@@ -95,17 +95,48 @@ int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 	else
 		ret = s->type->read_rq(s, rq);
 
-	if (!ret)
+	if (ret & NVM_RQ_OK) {
 		rq->cmd_flags |= (REQ_NVM|REQ_NVM_MAPPED);
+		ret |= NVM_RQ_QUEUE;
+	}
 
 	trace_nvm_rq_map_end(rq);
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nvm_map_rq);
+
+int nvm_discard_rq(struct nvm_dev *dev, struct request *rq)
+{
+	sector_t npages = blk_rq_bytes(rq) / EXPOSED_PAGE_SIZE;
+	sector_t l_addr = blk_rq_pos(rq) / NR_PHY_IN_LOG;
+	struct nvm_stor *s = dev->stor;
+
+	nvm_lock_laddr_range(s, l_addr, npages);
+	rq->cmd_flags |= REQ_NVM;
+	nvm_invalidate_range(s, l_addr, npages);
+	nvm_unlock_laddr_range(s, l_addr, npages);
+	return NVM_RQ_OK;
+}
+
+int nvm_process_rq(struct nvm_dev *dev, struct request *rq)
+{
+	if (unlikely(rq->cmd_flags & REQ_NVM_MAPPED)) {
+		pr_err("lightnvm: attempting to map already mapped request\n");
+		return NVM_RQ_ERR_MAPPED;
+	}
+
+	if (rq->cmd_flags & REQ_DISCARD)
+		return nvm_discard_rq(dev, rq);
+	else
+		return nvm_map_rq(dev, rq);
+}
+EXPORT_SYMBOL_GPL(nvm_process_rq);
 
 void nvm_complete_request(struct nvm_dev *nvm_dev, struct request *rq, int error)
 {
+	if (rq->cmd_flags & REQ_DISCARD)
+		return;
+
 	if (rq->cmd_flags & (REQ_NVM|REQ_NVM_MAPPED))
 		nvm_endio(nvm_dev, rq, error);
 

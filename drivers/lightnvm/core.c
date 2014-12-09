@@ -188,7 +188,7 @@ int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 	if (!p) {
 		nvm_unlock_laddr_range(s, l_addr, npages);
 		s->gc_ops->kick(s);
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return NVM_RQ_ERR_BUSY;
 	}
 
 	if (p->block)
@@ -197,7 +197,7 @@ int nvm_read_rq(struct nvm_stor *s, struct request *rq)
 
 	nvm_setup_rq(s, rq, p, l_addr, NVM_RQ_NONE);
 	//printk("nvm: R{LBA:%llu,sec:%llu}\n", p->addr, p->addr * NR_PHY_IN_LOG);
-	return BLK_MQ_RQ_QUEUE_OK;
+	return NVM_RQ_OK;
 }
 
 
@@ -214,7 +214,7 @@ int __nvm_write_rq(struct nvm_stor *s, struct request *rq, int is_gc)
 		nvm_unlock_laddr_range(s, l_addr, npages);
 		s->gc_ops->kick(s);
 
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return NVM_RQ_ERR_BUSY;
 	}
 
 	rq->phys_sector = p->addr * NR_PHY_IN_LOG;
@@ -223,7 +223,7 @@ int __nvm_write_rq(struct nvm_stor *s, struct request *rq, int is_gc)
 
 	nvm_setup_rq(s, rq, p, l_addr, NVM_RQ_NONE);
 
-	return BLK_MQ_RQ_QUEUE_OK;
+	return NVM_RQ_OK;
 }
 
 int nvm_write_rq(struct nvm_stor *s, struct request *rq)
