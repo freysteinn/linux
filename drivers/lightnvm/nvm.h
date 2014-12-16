@@ -473,7 +473,7 @@ static inline int request_intersects(struct nvm_inflight_request *r,
 		(laddr_start >= r->l_start && laddr_start <= r->l_end);
 }
 
-/*lock a range within a single inflight list (=> within a single block)*/
+/* lock a range within a single inflight list (=> within a single block) */
 static void __nvm_lock_rq_sgmt(struct nvm_stor *s, struct nvm_inflight *inflight,
 			int spin, sector_t laddr_start, unsigned nsectors)
 {
@@ -482,16 +482,16 @@ static void __nvm_lock_rq_sgmt(struct nvm_stor *s, struct nvm_inflight *inflight
 	unsigned long flags;
 	int tag;
 
-	tag = percpu_ida_alloc(&s->free_inflight, __GFP_WAIT);
+	tag = percpu_ida_alloc(&s->free_inflight, TASK_RUNNING);
 retry:
 	spin_lock_irqsave(&inflight->lock, flags);
 
 	list_for_each_entry(r, &inflight->reqs, list) {
 		if (request_intersects(r, laddr_start, laddr_end)) {
-			/*existing, overlapping request, come back later*/
+			/* existing, overlapping request, come back later */
 			spin_unlock_irqrestore(&inflight->lock, flags);
 			if (!spin)
-				/*TODO: not allowed, but something is needed */
+				/* TODO: not allowed, but something is needed */
 				schedule();
 			goto retry;
 		}
@@ -505,15 +505,16 @@ retry:
 
 	list_add_tail(&r->list, &inflight->reqs);
 	spin_unlock_irqrestore(&inflight->lock, flags);
-	/*pr_debug("%s: \tlocked sgmt_range{start:%zu, end:%zu}\n", __func__, r->l_start, r->l_end);*/
+	/* pr_err("%s: \tlocked sgmt_range{start:%zu, end:%zu}\n", __func__,
+			r->l_start, r->l_end); */
 }
 
 static inline unsigned incr_iflight_ndx(unsigned curr_ndx)
 {
 	if (unlikely(++curr_ndx == NVM_INFLIGHT_PARTITIONS))
 		return 0;
-	else
-		return curr_ndx;
+
+	return curr_ndx;
 }
 
 static void __nvm_lock_laddr_range(struct nvm_stor *s, int spin,
@@ -560,13 +561,15 @@ static void __nvm_unlock_rq_sgmt(struct nvm_stor *s, struct nvm_inflight *inflig
 	struct nvm_inflight_request *r = NULL;
 	unsigned long flags;
 
-
 	spin_lock_irqsave(&inflight->lock, flags);
 	BUG_ON(list_empty(&inflight->reqs));
-
 	list_for_each_entry(r, &inflight->reqs, list)
+	{
+		/* pr_err("%s: \tunlocked sgmt_range{start:%zu, end:%zu}\n",
+				__func__, r->l_start, r->l_end); */
 		if (request_equals(r, laddr_start, laddr_end))
 			break;
+	}
 
 	/* On bug -> The submission size and complete size properly differs */
 	BUG_ON(!r || !request_equals(r, laddr_start, laddr_end));
