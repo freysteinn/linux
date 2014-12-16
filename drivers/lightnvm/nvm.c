@@ -95,10 +95,8 @@ int nvm_map_rq(struct nvm_dev *dev, struct request *rq)
 	else
 		ret = s->type->read_rq(s, rq);
 
-	if (ret & NVM_RQ_OK) {
+	if (!ret)
 		rq->cmd_flags |= (REQ_NVM|REQ_NVM_MAPPED);
-		ret |= NVM_RQ_QUEUE;
-	}
 
 	trace_nvm_rq_map_end(rq);
 
@@ -125,8 +123,8 @@ int nvm_discard_rq(struct nvm_dev *dev, struct request *rq)
 	}
 
 	rq->cmd_flags |= REQ_NVM;
-
-	return NVM_RQ_OK;
+	blk_mq_end_io(rq, 0);
+	return NVM_RQ_PROCESSED;
 }
 
 int nvm_process_rq(struct nvm_dev *dev, struct request *rq)
@@ -138,8 +136,8 @@ int nvm_process_rq(struct nvm_dev *dev, struct request *rq)
 
 	if (rq->cmd_flags & REQ_DISCARD)
 		return nvm_discard_rq(dev, rq);
-	else
-		return nvm_map_rq(dev, rq);
+
+	return nvm_map_rq(dev, rq);
 }
 EXPORT_SYMBOL_GPL(nvm_process_rq);
 

@@ -1103,17 +1103,21 @@ static inline bool hctx_allow_merges(struct blk_mq_hw_ctx *hctx)
 		!blk_queue_nomerges(hctx->queue);
 }
 
+static inline int blk_mq_lightnvm_map(struct request *rq)
+{
+	struct request_queue *q = rq->q;
+
+	return (blk_queue_lightnvm(q) && blk_lightnvm_handle(q->nvm, rq));
+}
+
 static inline bool blk_mq_merge_queue_io(struct blk_mq_hw_ctx *hctx,
 					 struct blk_mq_ctx *ctx,
 					 struct request *rq, struct bio *bio)
 {
-	blk_mq_bio_to_request(rq, bio);
-	if (blk_queue_lightnvm(rq->q)) {
-		if (blk_lightnvm_handle(rq->q->nvm, rq))
-			return false;
-	}
-
 	if (!hctx_allow_merges(hctx)) {
+		blk_mq_bio_to_request(rq, bio);
+		if (blk_mq_lightnvm_map(rq))
+			return false;
 		spin_lock(&ctx->lock);
 insert_rq:
 		__blk_mq_insert_request(hctx, rq, false);
@@ -1124,6 +1128,7 @@ insert_rq:
 
 		spin_lock(&ctx->lock);
 		if (!blk_mq_attempt_merge(q, ctx, bio)) {
+			blk_mq_bio_to_request(rq, bio);
 			goto insert_rq;
 		}
 
@@ -1216,7 +1221,7 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		int ret;
 
 		blk_mq_bio_to_request(rq, bio);
-		if (blk_queue_lightnvm(q) && blk_lightnvm_handle(q->nvm, rq))
+		if (blk_mq_lightnvm_map(rq))
 			goto done;
 
 		blk_mq_start_request(rq, true);
@@ -1303,7 +1308,7 @@ static void blk_sq_make_request(struct request_queue *q, struct bio *bio)
 
 		if (plug) {
 			blk_mq_bio_to_request(rq, bio);
-			if (blk_queue_lightnvm(q) && blk_lightnvm_handle(q->nvm, rq))
+			if (blk_mq_lightnvm_map(rq))
 				goto done;
 			if (list_empty(&plug->mq_list))
 				trace_block_plug(q);

@@ -45,17 +45,17 @@ enum {
 	NVM_NO_COMPLETE		= 0xffff,
 };
 
-/* NVM request return values */
+/* LightNVM request return values */
 enum {
 	__NVM_RQ_OK,		/* not set, check errors, set, all OK */
-	__NVM_RQ_QUEUE,	/* not set, don't queue(handled!), set, queue */
+	__NVM_RQ_PROCESSED,	/* not set, continue, set, don't send to dev */
 	__NVM_RQ_ERR_BUSY,	/* cannot satisfy rq now */
 	__NVM_RQ_ERR_MAPPED,	/* already mapped */
 };
 
-#define NVM_RQ_OK		(1U << __NVM_RQ_OK)
-#define NVM_RQ_QUEUE		(1U << __NVM_RQ_QUEUE)
-#define NVM_RQ_ERR_BUSY	(1U << __NVM_RQ_ERR_BUSY)
+#define NVM_RQ_OK		(__NVM_RQ_OK)
+#define NVM_RQ_PROCESSED	(1U << __NVM_RQ_PROCESSED)
+#define NVM_RQ_ERR_BUSY		(1U << __NVM_RQ_ERR_BUSY)
 #define NVM_RQ_ERR_MAPPED	(1U << __NVM_RQ_ERR_MAPPED)
 
 struct nvm_id_chnl {
