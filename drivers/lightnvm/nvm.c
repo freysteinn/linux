@@ -111,10 +111,21 @@ int nvm_discard_rq(struct nvm_dev *dev, struct request *rq)
 	sector_t l_addr = blk_rq_pos(rq) / NR_PHY_IN_LOG;
 	struct nvm_stor *s = dev->stor;
 
-	nvm_lock_laddr_range(s, l_addr, npages);
+	while (npages > 0)
+	{
+		sector_t cur_pages = min_t(sector_t,
+						npages, NVM_INFLIGHT_TAGS / 2);
+
+		nvm_lock_laddr_range(s, l_addr, cur_pages);
+		nvm_invalidate_range(s, l_addr, cur_pages);
+		nvm_unlock_laddr_range(s, l_addr, cur_pages);
+
+		l_addr += cur_pages;
+		npages -= cur_pages;
+	}
+
 	rq->cmd_flags |= REQ_NVM;
-	nvm_invalidate_range(s, l_addr, npages);
-	nvm_unlock_laddr_range(s, l_addr, npages);
+
 	return NVM_RQ_OK;
 }
 
