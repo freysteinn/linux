@@ -487,12 +487,22 @@ retry:
 	spin_lock_irqsave(&inflight->lock, flags);
 
 	list_for_each_entry(r, &inflight->reqs, list) {
-		if (request_intersects(r, laddr_start, laddr_end)) {
+		if (unlikely(request_intersects(r, laddr_start, laddr_end))) {
 			/* existing, overlapping request, come back later */
 			spin_unlock_irqrestore(&inflight->lock, flags);
-			if (!spin)
-				/* TODO: not allowed, but something is needed */
+			if (!spin) {
+				/*
+				 * blk-mq runs in non-preemptible mode after it
+				 * has allocated a request. Release the CPU and
+				 * get it again, so we don't schedule in atomic
+				 * context. This seldom happens, we therefore
+				 * take the hit if the process isn't scheduled
+				 * on the same CPU.
+				 */
+				put_cpu();
 				schedule();
+				get_cpu();
+			}
 			goto retry;
 		}
 	}
