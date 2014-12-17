@@ -614,6 +614,11 @@ static int null_add_dev(void)
 	sector_div(size, bs);
 	set_capacity(disk, size);
 
+	mutex_lock(&lock);
+	nullb->index = nullb_indexes++;
+	list_add_tail(&nullb->list, &nullb_list);
+	mutex_unlock(&lock);
+
 	disk->flags |= GENHD_FL_EXT_DEVT;
 	disk->major		= null_major;
 	disk->first_minor	= nullb->index;
@@ -627,11 +632,6 @@ static int null_add_dev(void)
 
 		nullb->q->nvm->drv_cmd_size = sizeof(struct nullb_cmd);
 	}
-
-	mutex_lock(&lock);
-	list_add_tail(&nullb->list, &nullb_list);
-	nullb->index = nullb_indexes++;
-	mutex_unlock(&lock);
 
 	sprintf(disk->disk_name, "nullb%d", nullb->index);
 	add_disk(disk);
