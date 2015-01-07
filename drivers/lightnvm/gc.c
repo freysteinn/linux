@@ -81,7 +81,7 @@ void nvm_move_valid_pages(struct nvm_stor *s, struct nvm_block *block)
 		src_bio->bi_iter.bi_sector = src.addr * NR_PHY_IN_LOG;
 		page = mempool_alloc(s->page_pool, GFP_NOIO);
 
-		/* TODO: may fail whem EXP_PG_SIZE > PAGE_SIZE */
+		/* TODO: may fail when EXP_PG_SIZE > PAGE_SIZE */
 		bio_add_pc_page(q, src_bio, page, EXPOSED_PAGE_SIZE, 0);
 
 		src_rq = blk_mq_alloc_request(q, READ, GFP_KERNEL, false);
@@ -245,7 +245,7 @@ static void nvm_greedy_pool_gc(struct work_struct *work)
 		struct nvm_block *block = gblock->block;
 
 		if (!block->nr_invalid_pages) {
-			pr_err("No invalid pages");
+			pr_err("nvm: no invalid pages");
 			break;
 		}
 
@@ -254,7 +254,7 @@ static void nvm_greedy_pool_gc(struct work_struct *work)
 		BUG_ON(!block_is_full(block));
 		BUG_ON(atomic_inc_return(&block->gc_running) != 1);
 
-		pr_debug("selected block '%d' as GC victim\n", block->id);
+		pr_debug("nvm: selected block '%d' as GC victim\n", block->id);
 		queue_work(s->kgc_wq, &gblock->ws_gc);
 
 		nr_blocks_need--;
