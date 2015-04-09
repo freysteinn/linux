@@ -552,7 +552,7 @@ static int nvm_create_target(struct gendisk *qdisk, char *ttname, char *tname,
 	tdisk->flags = GENHD_FL_EXT_DEVT;
 	tdisk->major = 0;
 	tdisk->first_minor = 0;
-        tdisk->fops = qdisk->fops;
+	tdisk->fops = qdisk->fops;
 	tdisk->private_data = targetdata;
 	tdisk->queue = tqueue;
 
