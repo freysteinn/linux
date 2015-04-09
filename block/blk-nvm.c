@@ -320,6 +320,8 @@ static int nvm_blocks_init(struct nvm_dev *dev)
 
 static void nvm_core_free(struct nvm_dev *dev)
 {
+	if (dev->identity.chnls)
+		kfree(dev->identity.chnls);
 	kfree(dev);
 }
 
@@ -332,11 +334,6 @@ static int nvm_core_init(struct nvm_dev *dev, int max_qdepth)
 	return 0;
 }
 
-void nvm_free_nvm_id(struct nvm_id *id)
-{
-	kfree(id->chnls);
-}
-
 static void nvm_free(struct nvm_dev *dev)
 {
 	if (!dev)
@@ -344,8 +341,6 @@ static void nvm_free(struct nvm_dev *dev)
 
 	/* also frees blocks */
 	nvm_luns_free(dev);
-
-	nvm_free_nvm_id(&dev->identity);
 
 	nvm_core_free(dev);
 }
@@ -471,7 +466,7 @@ int blk_nvm_register(struct request_queue *q, struct nvm_dev_ops *ops)
 	/* TODO: NVM does not yet support multi-page IOs. */
 	blk_queue_max_hw_sectors(q, queue_logical_block_size(q) >> 9);
 
-	dev = kmalloc(sizeof(struct nvm_dev), GFP_KERNEL);
+	dev = kzalloc(sizeof(struct nvm_dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
 
