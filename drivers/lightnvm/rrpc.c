@@ -488,7 +488,7 @@ static struct nvm_addr *rrpc_map_page(struct rrpc *rrpc, sector_t laddr,
 	rlun = __rrpc_get_lun_rr(rrpc, is_gc);
 	lun = rlun->parent;
 
-	if ( !is_gc && lun->nr_free_blocks < 2 * rrpc->nr_luns ) {
+	if (!is_gc && lun->nr_free_blocks < rrpc->nr_luns * 2) {
 		return NULL;
 	}
 
