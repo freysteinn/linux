@@ -482,15 +482,16 @@ static struct nvm_addr *rrpc_map_page(struct rrpc *rrpc, sector_t laddr,
 	sector_t p_addr;
 
 	p = mempool_alloc(rrpc->addr_pool, GFP_ATOMIC);
-	if (!p)
+	if (!p) {
+		pr_err("rrpc: address pool run out of space\n");
 		return NULL;
+	}
 
 	rlun = __rrpc_get_lun_rr(rrpc, is_gc);
 	lun = rlun->parent;
 
-	if (!is_gc && lun->nr_free_blocks < rrpc->nr_luns * 2) {
+	if (!is_gc && lun->nr_free_blocks < rrpc->nr_luns * 2)
 		return NULL;
-	}
 
 	spin_lock(&rlun->lock);
 
