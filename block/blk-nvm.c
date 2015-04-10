@@ -553,26 +553,26 @@ static int nvm_create_target(struct gendisk *qdisk, char *ttname, char *tname,
 		goto err_t;
 	blk_queue_make_request(tqueue, tt->make_rq);
 
-	targetdata = tt->init(qqueue, tqueue, qdisk, lun_begin, lun_end);
-	if (IS_ERR(targetdata))
-		goto err_queue;
-
 	tdisk = alloc_disk(0);
 	if (!tdisk)
-		goto err_init;
-
-	tqueue->queuedata = targetdata;
-
-	blk_queue_prep_rq(qqueue, tt->prep_rq);
-	blk_queue_unprep_rq(qqueue, tt->unprep_rq);
+		goto err_queue;
 
 	sprintf(tdisk->disk_name, "%s", tname);
 	tdisk->flags = GENHD_FL_EXT_DEVT;
 	tdisk->major = 0;
 	tdisk->first_minor = 0;
 	tdisk->fops = &nvm_fops;
-	tdisk->private_data = targetdata;
 	tdisk->queue = tqueue;
+
+	targetdata = tt->init(qqueue, tqueue, qdisk, tdisk, lun_begin, lun_end);
+	if (IS_ERR(targetdata))
+		goto err_init;
+
+	tdisk->private_data = targetdata;
+	tqueue->queuedata = targetdata;
+
+	blk_queue_prep_rq(qqueue, tt->prep_rq);
+	blk_queue_unprep_rq(qqueue, tt->unprep_rq);
 
 	set_capacity(tdisk, tt->capacity(targetdata));
 	add_disk(tdisk);
@@ -586,7 +586,7 @@ static int nvm_create_target(struct gendisk *qdisk, char *ttname, char *tname,
 
 	return 0;
 err_init:
-	tt->exit(targetdata);
+	put_disk(tdisk);
 err_queue:
 	blk_cleanup_queue(tqueue);
 err_t:

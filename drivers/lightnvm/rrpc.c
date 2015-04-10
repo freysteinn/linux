@@ -1080,8 +1080,8 @@ static int rrpc_luns_configure(struct rrpc *rrpc)
 }
 
 static void *rrpc_init(struct request_queue *qdev,
-			struct request_queue *qtarget, struct gendisk *disk,
-						int lun_begin, int lun_end)
+			struct request_queue *qtarget, struct gendisk *qdisk,
+			struct gendisk *tdisk, int lun_begin, int lun_end)
 {
 	struct nvm_dev *dev;
 	struct block_device *bdev;
@@ -1093,7 +1093,7 @@ static void *rrpc_init(struct request_queue *qdev,
 		return ERR_PTR(-EINVAL);
 	}
 
-	bdev = bdget_disk(disk, 0);
+	bdev = bdget_disk(qdisk, 0);
 	if (blkdev_get(bdev, FMODE_WRITE | FMODE_READ, NULL)) {
 		pr_err("nvm: could not access backing device\n");
 		return ERR_PTR(-EINVAL);
