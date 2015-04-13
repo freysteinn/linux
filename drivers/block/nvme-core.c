@@ -39,6 +39,7 @@
 #include <linux/slab.h>
 #include <linux/t10-pi.h>
 #include <linux/types.h>
+#include <linux/lightnvm.h>
 #include <scsi/sg.h>
 #include <asm-generic/io-64-nonatomic-lo-hi.h>
 
@@ -134,6 +135,9 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_id_ns) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_lba_range_type) != 64);
 	BUILD_BUG_ON(sizeof(struct nvme_smart_log) != 512);
+	BUILD_BUG_ON(sizeof(struct nvme_lnvm_hb_write_command) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_lnvm_l2ptbl_command) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_lnvm_bbtbl_command) != 64);
 }
 
 typedef void (*nvme_completion_fn)(struct nvme_queue *, void *,
@@ -759,25 +763,10 @@ static void nvme_submit_flush(struct nvme_queue *nvmeq, struct nvme_ns *ns,
 	writel(nvmeq->sq_tail, nvmeq->q_db);
 }
 
-static int nvme_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
-							struct nvme_ns *ns)
+static inline void nvme_def_prepare_iod_command(struct nvme_command *cmnd,
+		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
+		u16 control, u32 dsmgmt)
 {
-	struct request *req = iod_get_private(iod);
-	struct nvme_command *cmnd;
-	u16 control = 0;
-	u32 dsmgmt = 0;
-
-	if (req->cmd_flags & REQ_FUA)
-		control |= NVME_RW_FUA;
-	if (req->cmd_flags & (REQ_FAILFAST_DEV | REQ_RAHEAD))
-		control |= NVME_RW_LR;
-
-	if (req->cmd_flags & REQ_RAHEAD)
-		dsmgmt |= NVME_RW_DSM_FREQ_PREFETCH;
-
-	cmnd = &nvmeq->sq_cmds[nvmeq->sq_tail];
-	memset(cmnd, 0, sizeof(*cmnd));
-
 	cmnd->rw.opcode = (rq_data_dir(req) ? nvme_cmd_write : nvme_cmd_read);
 	cmnd->rw.command_id = req->tag;
 	cmnd->rw.nsid = cpu_to_le32(ns->ns_id);
@@ -805,6 +794,28 @@ static int nvme_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 
 	cmnd->rw.control = cpu_to_le16(control);
 	cmnd->rw.dsmgmt = cpu_to_le32(dsmgmt);
+}
+
+static int nvme_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
+		nvme_prepare_iod_command *prep_command, struct nvme_ns *ns)
+{
+	struct request *req = iod_get_private(iod);
+	struct nvme_command *cmnd;
+	u16 control = 0;
+	u32 dsmgmt = 0;
+
+	if (req->cmd_flags & REQ_FUA)
+		control |= NVME_RW_FUA;
+	if (req->cmd_flags & (REQ_FAILFAST_DEV | REQ_RAHEAD))
+		control |= NVME_RW_LR;
+
+	if (req->cmd_flags & REQ_RAHEAD)
+		dsmgmt |= NVME_RW_DSM_FREQ_PREFETCH;
+
+	cmnd = &nvmeq->sq_cmds[nvmeq->sq_tail];
+	memset(cmnd, 0, sizeof(*cmnd));
+
+	prep_command(cmnd, req, iod, ns, control, dsmgmt);
 
 	if (++nvmeq->sq_tail == nvmeq->q_depth)
 		nvmeq->sq_tail = 0;
@@ -894,8 +905,10 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 		nvme_submit_discard(nvmeq, ns, req, iod);
 	else if (req->cmd_flags & REQ_FLUSH)
 		nvme_submit_flush(nvmeq, ns, req->tag);
+	else if (req->cmd_flags & REQ_NVM_MAPPED)
+		nvme_submit_iod(nvmeq, iod, nvme_nvm_prepare_iod_command, ns);
 	else
-		nvme_submit_iod(nvmeq, iod, ns);
+		nvme_submit_iod(nvmeq, iod, nvme_def_prepare_iod_command, ns);
 
 	nvme_process_cq(nvmeq);
 	spin_unlock_irq(&nvmeq->q_lock);
@@ -1768,6 +1781,10 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	case nvme_cmd_compare:
 		iod = nvme_map_user_pages(dev, io.opcode & 1, io.addr, length);
 		break;
+	case lnvm_admin_identify:
+	case lnvm_admin_get_features:
+	case lnvm_admin_set_responsibility:
+		return nvme_nvm_submit_io(ns, &io);
 	default:
 		return -EINVAL;
 	}
@@ -2019,6 +2036,7 @@ static int nvme_revalidate_disk(struct gendisk *disk)
 	dma_addr_t dma_addr;
 	int lbaf, pi_type, old_ms;
 	unsigned short bs;
+	int ret = 0;
 
 	id = dma_alloc_coherent(&dev->pci_dev->dev, 4096, &dma_addr,
 								GFP_KERNEL);
@@ -2072,8 +2090,12 @@ static int nvme_revalidate_disk(struct gendisk *disk)
 	if (dev->oncs & NVME_CTRL_ONCS_DSM)
 		nvme_config_discard(ns);
 
+	if (id->nsfeat & NVME_NS_FEAT_NVM) {
+		ret = nvme_nvm_register(disk, &dev->pci_dev->dev);
+	}
+
 	dma_free_coherent(&dev->pci_dev->dev, 4096, id, dma_addr);
-	return 0;
+	return ret;
 }
 
 static const struct block_device_operations nvme_fops = {
@@ -2184,6 +2206,7 @@ static void nvme_alloc_ns(struct nvme_dev *dev, unsigned nsid)
 	if (ns->ms)
 		revalidate_disk(ns->disk);
 	return;
+
  out_free_queue:
 	blk_cleanup_queue(ns->queue);
  out_free_ns:
@@ -2315,7 +2338,9 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	struct nvme_id_ctrl *ctrl;
 	void *mem;
 	dma_addr_t dma_addr;
-	int shift = NVME_CAP_MPSMIN(readq(&dev->bar->cap)) + 12;
+	u64 cap = readq(&dev->bar->cap);
+	int shift = NVME_CAP_MPSMIN(cap) + 12;
+	int nvm_cmdset = NVME_CAP_NVM(cap);
 
 	mem = dma_alloc_coherent(&pdev->dev, 4096, &dma_addr, GFP_KERNEL);
 	if (!mem)
@@ -2360,8 +2385,10 @@ static int nvme_dev_add(struct nvme_dev *dev)
 	dev->tagset.queue_depth =
 				min_t(int, dev->q_depth, BLK_MQ_MAX_DEPTH) - 1;
 	dev->tagset.cmd_size = nvme_cmd_size(dev);
-	dev->tagset.flags = BLK_MQ_F_SHOULD_MERGE;
 	dev->tagset.driver_data = dev;
+
+	if (!nvm_cmdset)
+		dev->tagset.flags = BLK_MQ_F_SHOULD_MERGE;
 
 	if (blk_mq_alloc_tag_set(&dev->tagset))
 		return 0;
