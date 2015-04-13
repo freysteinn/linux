@@ -338,6 +338,11 @@ EXPORT_SYMBOL(__blk_mq_end_request);
 
 void blk_mq_end_request(struct request *rq, int error)
 {
+	struct request_queue *q = rq->q;
+
+	if (q->unprep_rq_fn)
+		q->unprep_rq_fn(q, rq);
+
 	if (blk_update_request(rq, error, blk_rq_bytes(rq)))
 		BUG();
 	__blk_mq_end_request(rq, error);
@@ -753,6 +758,17 @@ static void flush_busy_ctxs(struct blk_mq_hw_ctx *hctx, struct list_head *list)
 	}
 }
 
+static int blk_mq_prep_rq(struct request_queue *q, struct request *rq)
+{
+	if (!q->prep_rq_fn)
+		return 0;
+
+	if (rq->cmd_flags & REQ_DONTPREP)
+		return 0;
+
+	return q->prep_rq_fn(q, rq);
+}
+
 /*
  * Run this hardware queue, pulling any software queues mapped to it in.
  * Note that this function currently has various problems around ordering
@@ -812,10 +828,14 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		bd.list = dptr;
 		bd.last = list_empty(&rq_list);
 
-		ret = q->mq_ops->queue_rq(hctx, &bd);
+		ret = blk_mq_prep_rq(q, rq);
+		if (likely(!ret))
+			ret = q->mq_ops->queue_rq(hctx, &bd);
 		switch (ret) {
 		case BLK_MQ_RQ_QUEUE_OK:
 			queued++;
+			continue;
+		case BLK_MQ_RQ_QUEUE_DONE:
 			continue;
 		case BLK_MQ_RQ_QUEUE_BUSY:
 			list_add(&rq->queuelist, &rq_list);
@@ -1270,10 +1290,14 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		 * error (busy), just add it to our list as we previously
 		 * would have done
 		 */
-		ret = q->mq_ops->queue_rq(data.hctx, &bd);
+		ret = blk_mq_prep_rq(q, rq);
+		if (likely(!ret))
+			ret = q->mq_ops->queue_rq(data.hctx, &bd);
 		if (ret == BLK_MQ_RQ_QUEUE_OK)
 			goto done;
 		else {
+			if (ret == BLK_MQ_RQ_QUEUE_DONE)
+				goto done;
 			__blk_mq_requeue_request(rq);
 
 			if (ret == BLK_MQ_RQ_QUEUE_ERROR) {
