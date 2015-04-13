@@ -8,6 +8,7 @@
 #include <linux/slab.h>
 #include <linux/blk-mq.h>
 #include <linux/hrtimer.h>
+#include <linux/lightnvm.h>
 
 struct nullb_cmd {
 	struct list_head list;
@@ -147,6 +148,14 @@ static bool use_per_node_hctx = false;
 module_param(use_per_node_hctx, bool, S_IRUGO);
 MODULE_PARM_DESC(use_per_node_hctx, "Use per-node allocation for hardware context queues. Default: false");
 
+static bool nvm_enable;
+module_param(nvm_enable, bool, S_IRUGO);
+MODULE_PARM_DESC(nvm_enable, "Enable Open-channel SSD. Default: false");
+
+static int nvm_num_channels = 1;
+module_param(nvm_num_channels, int, S_IRUGO);
+MODULE_PARM_DESC(nvm_num_channels, "Number of channels to be exposed from the Open-Channel SSD. Default: 1");
+
 static void put_tag(struct nullb_queue *nq, unsigned int tag)
 {
 	clear_bit_unlock(tag, nq->tag_map);
@@ -278,6 +287,8 @@ static inline void null_handle_cmd(struct nullb_cmd *cmd)
 	case NULL_IRQ_SOFTIRQ:
 		switch (queue_mode)  {
 		case NULL_Q_MQ:
+			if (nvm_enable)
+				nvm_unprep_rq(cmd->rq);
 			blk_mq_complete_request(cmd->rq);
 			break;
 		case NULL_Q_RQ:
@@ -351,7 +362,61 @@ static void null_request_fn(struct request_queue *q)
 	}
 }
 
-static int null_queue_rq(struct blk_mq_hw_ctx *hctx,
+#ifdef CONFIG_NVM
+
+static int null_nvm_id(struct request_queue *q, struct nvm_id *id)
+{
+	sector_t size = gb * 1024 * 1024 * 1024ULL;
+	unsigned long per_chnl_size =
+				size / bs / nvm_num_channels;
+	struct nvm_id_chnl *chnl;
+	int i;
+
+	id->ver_id = 0x1;
+	id->nvm_type = NVM_NVMT_BLK;
+	id->nchannels = nvm_num_channels;
+
+	id->chnls = kmalloc_array(id->nchannels, sizeof(struct nvm_id_chnl),
+								GFP_KERNEL);
+	if (!id->chnls)
+		return -ENOMEM;
+
+	for (i = 0; i < id->nchannels; i++) {
+		chnl = &id->chnls[i];
+		chnl->queue_size = hw_queue_depth;
+		chnl->gran_read = bs;
+		chnl->gran_write = bs;
+		chnl->gran_erase = bs * 256;
+		chnl->oob_size = 0;
+		chnl->t_r = chnl->t_sqr = 25000; /* 25us */
+		chnl->t_w = chnl->t_sqw = 500000; /* 500us */
+		chnl->t_e = 1500000; /* 1.500us */
+		chnl->io_sched = NVM_IOSCHED_CHANNEL;
+		chnl->laddr_begin = per_chnl_size * i;
+		chnl->laddr_end = per_chnl_size * (i + 1) - 1;
+	}
+
+	return 0;
+}
+
+static int null_nvm_get_features(struct request_queue *q,
+						struct nvm_get_features *gf)
+{
+	gf->rsp = 0;
+	gf->ext = 0;
+
+	return 0;
+}
+
+static struct nvm_dev_ops null_nvm_dev_ops = {
+	.identify		= null_nvm_id,
+	.get_features		= null_nvm_get_features,
+};
+#else
+static struct nvm_dev_ops null_nvm_dev_ops;
+#endif /* CONFIG_NVM */
+
+static inline int __null_queue_rq(struct blk_mq_hw_ctx *hctx,
 			 const struct blk_mq_queue_data *bd)
 {
 	struct nullb_cmd *cmd = blk_mq_rq_to_pdu(bd->rq);
@@ -363,6 +428,24 @@ static int null_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	null_handle_cmd(cmd);
 	return BLK_MQ_RQ_QUEUE_OK;
+}
+
+static int null_queue_nvm_rq(struct blk_mq_hw_ctx *hctx,
+			 const struct blk_mq_queue_data *bd)
+{
+	int ret;
+
+	ret = nvm_prep_rq(bd->rq);
+	if (ret)
+		return ret;
+
+	return __null_queue_rq(hctx, bd);
+}
+
+static int null_queue_rq(struct blk_mq_hw_ctx *hctx,
+			 const struct blk_mq_queue_data *bd)
+{
+	return __null_queue_rq(hctx, bd);
 }
 
 static void null_init_queue(struct nullb *nullb, struct nullb_queue *nq)
@@ -517,12 +600,25 @@ static int null_add_dev(void)
 		goto out_free_nullb;
 
 	if (queue_mode == NULL_Q_MQ) {
+		int cmd_size = sizeof(struct nullb_cmd);
+
+		if (nvm_enable) {
+			cmd_size += sizeof(struct nvm_per_rq);
+			null_mq_ops.queue_rq = &null_queue_nvm_rq;
+
+			if (bs != 4096) {
+				pr_warn("null_blk: only 4K sectors are supported for Open-Channel SSDs. bs is set to 4K.\n");
+				bs = 4096;
+			}
+		} else {
+			nullb->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+		}
+
 		nullb->tag_set.ops = &null_mq_ops;
 		nullb->tag_set.nr_hw_queues = submit_queues;
 		nullb->tag_set.queue_depth = hw_queue_depth;
 		nullb->tag_set.numa_node = home_node;
-		nullb->tag_set.cmd_size	= sizeof(struct nullb_cmd);
-		nullb->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+		nullb->tag_set.cmd_size = cmd_size;
 		nullb->tag_set.driver_data = nullb;
 
 		rv = blk_mq_alloc_tag_set(&nullb->tag_set);
@@ -567,11 +663,6 @@ static int null_add_dev(void)
 		goto out_cleanup_blk_queue;
 	}
 
-	mutex_lock(&lock);
-	list_add_tail(&nullb->list, &nullb_list);
-	nullb->index = nullb_indexes++;
-	mutex_unlock(&lock);
-
 	blk_queue_logical_block_size(nullb->q, bs);
 	blk_queue_physical_block_size(nullb->q, bs);
 
@@ -579,16 +670,28 @@ static int null_add_dev(void)
 	sector_div(size, bs);
 	set_capacity(disk, size);
 
+	mutex_lock(&lock);
+	nullb->index = nullb_indexes++;
+	list_add_tail(&nullb->list, &nullb_list);
+	mutex_unlock(&lock);
+
 	disk->flags |= GENHD_FL_EXT_DEVT | GENHD_FL_SUPPRESS_PARTITION_INFO;
 	disk->major		= null_major;
 	disk->first_minor	= nullb->index;
 	disk->fops		= &null_fops;
 	disk->private_data	= nullb;
 	disk->queue		= nullb->q;
+
+	if (nvm_enable && nvm_register(disk, &null_nvm_dev_ops))
+			goto out_cleanup_nvm;
+
 	sprintf(disk->disk_name, "nullb%d", nullb->index);
 	add_disk(disk);
+	nvm_attach_sysfs(disk);
 	return 0;
 
+out_cleanup_nvm:
+	put_disk(disk);
 out_cleanup_blk_queue:
 	blk_cleanup_queue(nullb->q);
 out_cleanup_tags:
