@@ -29,7 +29,7 @@ static DECLARE_RWSEM(_lock);
 		for ((i) = 0, rlun = &(rrpc)->luns[0]; \
 			(i) < (rrpc)->nr_luns; (i)++, rlun = &(rrpc)->luns[(i)])
 
-static void invalidate_block_page(struct nvm_dev *dev, struct nvm_addr *p)
+static void invalidate_block_page(struct nvm_addr *p)
 {
 	struct nvm_block *block = p->block;
 	unsigned int page_offset;
@@ -38,7 +38,7 @@ static void invalidate_block_page(struct nvm_dev *dev, struct nvm_addr *p)
 		return;
 
 	spin_lock(&block->lock);
-	page_offset = p->addr % dev->nr_pages_per_blk;
+	page_offset = p->addr % block->lun->nr_pages_per_blk;
 	WARN_ON(test_and_set_bit(page_offset, block->invalid_pages));
 	block->nr_invalid_pages++;
 	spin_unlock(&block->lock);
@@ -50,7 +50,7 @@ static inline void __nvm_page_invalidate(struct rrpc *rrpc, struct nvm_addr *a)
 	if (a->addr == ADDR_EMPTY)
 		return;
 
-	invalidate_block_page(rrpc->q_nvm, a);
+	invalidate_block_page(a);
 	rrpc->rev_trans_map[a->addr - rrpc->poffset].addr = ADDR_EMPTY;
 }
 
@@ -186,8 +186,8 @@ static void rrpc_end_sync_bio(struct bio *bio, int error)
  */
 static int rrpc_move_valid_pages(struct rrpc *rrpc, struct nvm_block *block)
 {
-	struct nvm_dev *dev = rrpc->q_nvm;
 	struct request_queue *q = rrpc->q_dev;
+	struct nvm_lun *lun = block->lun;
 	struct nvm_rev_addr *rev;
 	struct bio *bio;
 	struct request *rq;
@@ -196,7 +196,7 @@ static int rrpc_move_valid_pages(struct rrpc *rrpc, struct nvm_block *block)
 	sector_t phys_addr;
 	DECLARE_COMPLETION_ONSTACK(wait);
 
-	if (bitmap_full(block->invalid_pages, dev->nr_pages_per_blk))
+	if (bitmap_full(block->invalid_pages, lun->nr_pages_per_blk))
 		return 0;
 
 	bio = bio_alloc(GFP_NOIO, 1);
@@ -208,8 +208,8 @@ static int rrpc_move_valid_pages(struct rrpc *rrpc, struct nvm_block *block)
 	page = mempool_alloc(rrpc->page_pool, GFP_NOIO);
 
 	while ((slot = find_first_zero_bit(block->invalid_pages,
-					   dev->nr_pages_per_blk)) <
-						dev->nr_pages_per_blk) {
+					   lun->nr_pages_per_blk)) <
+						lun->nr_pages_per_blk) {
 
 		/* Lock laddr */
 		phys_addr = block_to_addr(block) + slot;
@@ -272,7 +272,7 @@ try:
 	mempool_free(page, rrpc->page_pool);
 	bio_put(bio);
 
-	if (!bitmap_full(block->invalid_pages, rrpc->q_nvm->nr_pages_per_blk)) {
+	if (!bitmap_full(block->invalid_pages, lun->nr_pages_per_blk)) {
 		pr_err("nvm: failed to garbage collect block\n");
 		return -EIO;
 	}
@@ -449,7 +449,7 @@ static inline void __rrpc_page_invalidate(struct rrpc *rrpc,
 	if (gp->addr == ADDR_EMPTY)
 		return;
 
-	invalidate_block_page(rrpc->q_nvm, gp);
+	invalidate_block_page(gp);
 	rrpc->rev_trans_map[gp->addr - rrpc->poffset].addr = ADDR_EMPTY;
 }
 
@@ -559,29 +559,31 @@ static void __rrpc_unprep_rq(struct rrpc *rrpc, struct request *rq)
 	struct nvm_per_rq *pb = get_per_rq_data(rq);
 	struct nvm_addr *p = pb->addr;
 	struct nvm_block *block = p->block;
-	int fill;
+	struct nvm_lun *lun = block->lun;
+	struct rrpc_block_gc *gcb;
+	int cmnt_size;
 
 	rrpc_unlock_rq(rrpc, rq);
 
 	if (rq_data_dir(rq) == WRITE) {
-		fill = atomic_inc_return(&block->data_cmnt_size);
-		if (fill == rrpc->q_nvm->nr_pages_per_blk) {
-			struct rrpc_block_gc *gcb =
-				mempool_alloc(rrpc->gcb_pool, GFP_ATOMIC);
-			if (!gcb) {
-				pr_err("rrpc: expect failures...");
-				goto gcb_fail;
-			}
+		cmnt_size = atomic_inc_return(&block->data_cmnt_size);
+		if (likely(cmnt_size != lun->nr_pages_per_blk))
+			goto done;
 
-			gcb->rrpc = rrpc;
-			gcb->block = block;
-			INIT_WORK(&gcb->ws_gc, rrpc_gc_queue);
-
-			queue_work(rrpc->kgc_wq, &gcb->ws_gc);
+		gcb = mempool_alloc(rrpc->gcb_pool, GFP_ATOMIC);
+		if (!gcb) {
+			pr_err("rrpc: not able to queue block for gc.");
+			goto done;
 		}
+
+		gcb->rrpc = rrpc;
+		gcb->block = block;
+		INIT_WORK(&gcb->ws_gc, rrpc_gc_queue);
+
+		queue_work(rrpc->kgc_wq, &gcb->ws_gc);
 	}
 
-gcb_fail:
+done:
 	mempool_free(pb->addr, rrpc->addr_pool);
 }
 
@@ -793,11 +795,11 @@ static int rrpc_l2p_update(u64 slba, u64 nlb, u64 *entries, void *private)
 	struct nvm_dev *dev = rrpc->q_nvm;
 	struct nvm_addr *addr = rrpc->trans_map + slba;
 	struct nvm_rev_addr *raddr = rrpc->rev_trans_map;
-	sector_t max_pages = dev->nr_pages * (dev->sector_size >> 9);
+	sector_t max_pages = dev->total_pages * (dev->sector_size >> 9);
 	u64 elba = slba + nlb;
 	u64 i;
 
-	if (unlikely(elba > dev->nr_pages)) {
+	if (unlikely(elba > dev->total_pages)) {
 		pr_err("nvm: L2P data from device is out of bounds!\n");
 		return -EINVAL;
 	}
@@ -851,8 +853,8 @@ static int rrpc_map_init(struct rrpc *rrpc)
 		return 0;
 
 	/* Bring up the mapping table from device */
-	ret = dev->ops->get_l2p_tbl(dev->q, 0, dev->nr_pages, rrpc_l2p_update,
-									rrpc);
+	ret = dev->ops->get_l2p_tbl(dev->q, 0, dev->total_pages,
+							rrpc_l2p_update, rrpc);
 	if (ret) {
 		pr_err("nvm: rrpc: could not read L2P table.\n");
 		return -EINVAL;
