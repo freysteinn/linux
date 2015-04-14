@@ -79,8 +79,10 @@ static struct request *rrpc_inflight_laddr_acquire(struct rrpc *rrpc,
 		return ERR_PTR(-ENOMEM);
 
 	inf = rrpc_get_inflight_rq(rq);
-	while (rrpc_lock_laddr(rrpc, laddr, pages, inf))
-		schedule();
+	if (rrpc_lock_laddr(rrpc, laddr, pages, inf)) {
+		blk_mq_free_request(rq);
+		return NULL;
+	}
 
 	return rq;
 }
@@ -101,7 +103,11 @@ static void rrpc_discard(struct rrpc *rrpc, struct bio *bio)
 	sector_t len = bio->bi_iter.bi_size / EXPOSED_PAGE_SIZE;
 	struct request *rq;
 
-	rq = rrpc_inflight_laddr_acquire(rrpc, slba, len);
+	do {
+		rq = rrpc_inflight_laddr_acquire(rrpc, slba, len);
+		schedule();
+	} while (!rq);
+
 	if (IS_ERR(rq)) {
 		bio_io_error(bio);
 		return;
@@ -208,6 +214,7 @@ static int rrpc_move_valid_pages(struct rrpc *rrpc, struct nvm_block *block)
 		/* Lock laddr */
 		phys_addr = block_to_addr(block) + slot;
 
+try:
 		spin_lock(&rrpc->rev_lock);
 		/* Get logical address from physical to logical table */
 		rev = &rrpc->rev_trans_map[phys_addr - rrpc->poffset];
@@ -218,6 +225,12 @@ static int rrpc_move_valid_pages(struct rrpc *rrpc, struct nvm_block *block)
 		}
 
 		rq = rrpc_inflight_laddr_acquire(rrpc, rev->addr, 1);
+		if (!rq) {
+			spin_unlock(&rrpc->rev_lock);
+			schedule();
+			goto try;
+		}
+
 		spin_unlock(&rrpc->rev_lock);
 
 		/* Perform read to do GC */
