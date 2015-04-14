@@ -841,7 +841,7 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		case BLK_MQ_RQ_QUEUE_DONE:
 			continue;
 		case BLK_MQ_RQ_QUEUE_BUSY:
-			list_add_tail(&rq->queuelist, &rq_list);
+			list_add(&rq->queuelist, &rq_list);
 			__blk_mq_requeue_request(rq);
 			break;
 		default:
