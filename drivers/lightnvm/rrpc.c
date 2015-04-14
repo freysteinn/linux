@@ -747,8 +747,6 @@ static void rrpc_gc_free(struct rrpc *rrpc)
 	struct rrpc_lun *rlun;
 	int i;
 
-	del_timer(&rrpc->gc_timer);
-
 	if (rrpc->krqd_wq)
 		destroy_workqueue(rrpc->krqd_wq);
 
@@ -999,8 +997,10 @@ static void rrpc_exit(void *private)
 	struct rrpc *rrpc = private;
 
 	blkdev_put(rrpc->q_bdev, FMODE_WRITE | FMODE_READ);
+	del_timer(&rrpc->gc_timer);
 
-	/* FIXME: bring down gendisk and everything else */
+	flush_workqueue(rrpc->krqd_wq);
+	flush_workqueue(rrpc->kgc_wq);
 
 	rrpc_free(rrpc);
 }
