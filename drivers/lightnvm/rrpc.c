@@ -155,9 +155,6 @@ static void rrpc_gc_timer(unsigned long data)
 	struct rrpc *rrpc = (struct rrpc *)data;
 
 	rrpc_gc_kick(rrpc);
-
-	blk_mq_kick_requeue_list(rrpc->q_dev);
-
 	mod_timer(&rrpc->gc_timer, jiffies + msecs_to_jiffies(10));
 }
 
@@ -610,6 +607,13 @@ static struct nvm_addr *rrpc_lookup_ltop(struct rrpc *rrpc, sector_t laddr)
 	return p;
 }
 
+static int rrpc_requeue_and_kick(struct rrpc *rrpc, struct request *rq)
+{
+	blk_mq_requeue_request(rq);
+	blk_mq_kick_requeue_list(rrpc->q_dev);
+	return BLK_MQ_RQ_QUEUE_DONE;
+}
+
 static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 {
 	struct nvm_addr *p;
@@ -650,15 +654,16 @@ static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
 	if (rq->cmd_flags & REQ_NVM_NO_INFLIGHT)
 		is_gc = 1;
 
-	if (rrpc_lock_rq(rrpc, rq))
-		return BLK_MQ_RQ_QUEUE_BUSY;
+	if (rrpc_lock_rq(rrpc, rq)) {
+		return rrpc_requeue_and_kick(rrpc, rq);
+	}
 
 	p = rrpc_map_page(rrpc, l_addr, is_gc);
 	if (!p) {
 		BUG_ON(is_gc);
 		rrpc_unlock_rq(rrpc, rq);
 		rrpc_gc_kick(rrpc);
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return rrpc_requeue_and_kick(rrpc, rq);
 	}
 
 	rq->phys_sector = nvm_get_sector(p->addr);
