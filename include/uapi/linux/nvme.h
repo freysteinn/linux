@@ -299,7 +299,7 @@ struct nvme_rw_command {
 	__le16			appmask;
 };
 
-struct nvme_lnvm_rw_command {
+struct nvme_lnvm_hb_write_command {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -582,7 +582,7 @@ struct nvme_command {
 		struct nvme_dsm_cmd dsm;
 		struct nvme_abort_cmd abort;
 		struct nvme_lnvm_identify lnvm_identify;
-		struct nvme_lnvm_rw_command lnvm_rw;
+		struct nvme_lnvm_hb_write_command lnvm_hb_w;
 		struct nvme_lnvm_l2ptbl_command lnvm_l2p;
 		struct nvme_lnvm_set_resp_command lnvm_resp;
 		struct nvme_lnvm_erase_block lnvm_erase;

@@ -135,7 +135,7 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_id_ns) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_lba_range_type) != 64);
 	BUILD_BUG_ON(sizeof(struct nvme_smart_log) != 512);
-	BUILD_BUG_ON(sizeof(struct nvme_lnvm_rw_command) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_lnvm_hb_write_command) != 64);
 	BUILD_BUG_ON(sizeof(struct nvme_lnvm_l2ptbl_command) != 64);
 }
 
@@ -806,17 +806,17 @@ static int nvme_submit_lnvm_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 	cmnd = &nvmeq->sq_cmds[nvmeq->sq_tail];
 	memset(cmnd, 0, sizeof(*cmnd));
 
-	cmnd->lnvm_rw.opcode = (rq_data_dir(req) ?
+	cmnd->lnvm_hb_w.opcode = (rq_data_dir(req) ?
 				lnvm_cmd_hybrid_write : lnvm_cmd_hybrid_read);
-	cmnd->lnvm_rw.command_id = req->tag;
-	cmnd->lnvm_rw.nsid = cpu_to_le32(ns->ns_id);
-	cmnd->lnvm_rw.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
-	cmnd->lnvm_rw.prp2 = cpu_to_le64(iod->first_dma);
-	cmnd->lnvm_rw.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
-	cmnd->lnvm_rw.length = cpu_to_le16((blk_rq_bytes(req) >> ns->lba_shift) - 1);
-	cmnd->lnvm_rw.control = cpu_to_le16(control);
-	cmnd->lnvm_rw.dsmgmt = cpu_to_le32(dsmgmt);
-	cmnd->lnvm_rw.phys_addr = cpu_to_le64(nvme_block_nr(ns, req->phys_sector));
+	cmnd->lnvm_hb_w.command_id = req->tag;
+	cmnd->lnvm_hb_w.nsid = cpu_to_le32(ns->ns_id);
+	cmnd->lnvm_hb_w.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	cmnd->lnvm_hb_w.prp2 = cpu_to_le64(iod->first_dma);
+	cmnd->lnvm_hb_w.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
+	cmnd->lnvm_hb_w.length = cpu_to_le16((blk_rq_bytes(req) >> ns->lba_shift) - 1);
+	cmnd->lnvm_hb_w.control = cpu_to_le16(control);
+	cmnd->lnvm_hb_w.dsmgmt = cpu_to_le32(dsmgmt);
+	cmnd->lnvm_hb_w.phys_addr = cpu_to_le64(nvme_block_nr(ns, req->phys_sector));
 
 	if (++nvmeq->sq_tail == nvmeq->q_depth)
 		nvmeq->sq_tail = 0;
@@ -845,7 +845,7 @@ static int nvme_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 	memset(cmnd, 0, sizeof(*cmnd));
 
 	if (req->cmd_flags & REQ_NVM_MAPPED)
-		cmnd->lnvm_rw.phys_addr = cpu_to_le64(nvme_block_nr(ns, req->phys_sector) + 1);
+		cmnd->lnvm_hb_w.phys_addr = cpu_to_le64(nvme_block_nr(ns, req->phys_sector) + 1);
 
 	cmnd->rw.opcode = (rq_data_dir(req) ? nvme_cmd_write : nvme_cmd_read);
 	cmnd->rw.command_id = req->tag;
