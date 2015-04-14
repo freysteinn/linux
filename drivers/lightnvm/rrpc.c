@@ -219,7 +219,7 @@ try:
 		/* Get logical address from physical to logical table */
 		rev = &rrpc->rev_trans_map[phys_addr - rrpc->poffset];
 		/* already updated by previous regular write */
-		if (rev->addr == LTOP_POISON) {
+		if (rev->addr == ADDR_EMPTY) {
 			spin_unlock(&rrpc->rev_lock);
 			continue;
 		}
