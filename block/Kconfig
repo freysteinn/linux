@@ -89,17 +89,16 @@ config BLK_DEV_INTEGRITY
 	Protection.  If in doubt, say N.
 
 config BLK_DEV_NVM
-	bool "Block layer NVM (Open-Channel SSD) support"
+	bool "Block layer Open-Channel SSD support"
 	depends on BLK_DEV
 	default y
 	---help---
 	  Say Y here to get to enable support for Open-channel SSDs.
 
-	  Open-Channel SSDs exposes direct access to the underlying non-volatile
+	  Open-Channel SSDs expose direct access to the underlying non-volatile
 	  memory.
 
-	  If you say N, all options in this submenu will be skipped and disabled
-	  only do this if you know what you are doing.
+	  This option is required by Open-Channel SSD target drivers.
 
 config BLK_DEV_THROTTLING
 	bool "Block layer bio throttling support"

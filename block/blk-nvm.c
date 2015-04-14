@@ -69,10 +69,10 @@ void nvm_unregister_target(struct nvm_target_type *tt)
 	up_write(&_lock);
 }
 
-static void nvm_reset_block(struct nvm_dev *dev, struct nvm_block *block)
+static void nvm_reset_block(struct nvm_lun *lun, struct nvm_block *block)
 {
 	spin_lock(&block->lock);
-	bitmap_zero(block->invalid_pages, dev->nr_pages_per_blk);
+	bitmap_zero(block->invalid_pages, lun->nr_pages_per_blk);
 	block->next_page = 0;
 	block->nr_invalid_pages = 0;
 	atomic_set(&block->data_cmnt_size, 0);
@@ -90,12 +90,10 @@ static void nvm_reset_block(struct nvm_dev *dev, struct nvm_block *block)
  */
 struct nvm_block *blk_nvm_get_blk(struct nvm_lun *lun, int is_gc)
 {
-	struct nvm_dev *dev;
 	struct nvm_block *block = NULL;
 
 	BUG_ON(!lun);
 
-	dev = lun->dev;
 	spin_lock(&lun->lock);
 
 	if (list_empty(&lun->free_list)) {
@@ -117,7 +115,7 @@ struct nvm_block *blk_nvm_get_blk(struct nvm_lun *lun, int is_gc)
 
 	spin_unlock(&lun->lock);
 
-	nvm_reset_block(dev, block);
+	nvm_reset_block(lun, block);
 
 out:
 	return block;
@@ -168,8 +166,7 @@ int blk_nvm_erase_blk(struct nvm_dev *dev, struct nvm_block *block)
 }
 EXPORT_SYMBOL(blk_nvm_erase_blk);
 
-
-static void nvm_luns_free(struct nvm_dev *dev)
+static void nvm_blocks_free(struct nvm_dev *dev)
 {
 	struct nvm_lun *lun;
 	int i;
@@ -179,7 +176,10 @@ static void nvm_luns_free(struct nvm_dev *dev)
 			break;
 		vfree(lun->blocks);
 	}
+}
 
+static void nvm_luns_free(struct nvm_dev *dev)
+{
 	kfree(dev->luns);
 }
 
@@ -208,16 +208,21 @@ static int nvm_luns_init(struct nvm_dev *dev)
 		lun->dev = dev;
 		lun->chnl = chnl;
 		lun->reserved_blocks = 2; /* for GC only */
-		lun->nr_free_blocks = lun->nr_blocks =
+		lun->nr_blocks =
 				(chnl->laddr_end - chnl->laddr_begin + 1) /
 				(chnl->gran_erase / chnl->gran_read);
-
-		dev->total_blocks += lun->nr_blocks;
-		/* TODO: make blks per lun variable among luns */
-		dev->nr_blks_per_lun = lun->nr_free_blocks;
-		dev->nr_pages_per_blk = chnl->gran_erase / chnl->gran_write *
+		lun->nr_free_blocks = lun->nr_blocks;
+		lun->nr_pages_per_blk = chnl->gran_erase / chnl->gran_write *
 					(chnl->gran_write / dev->sector_size);
-		lun->nr_pages_per_blk = dev->nr_pages_per_blk;
+
+		dev->total_pages += lun->nr_blocks * lun->nr_pages_per_blk;
+		dev->total_blocks += lun->nr_blocks;
+
+		if (lun->nr_pages_per_blk >
+				MAX_INVALID_PAGES_STORAGE * BITS_PER_LONG) {
+			pr_err("nvm: number of pages per block too high.");
+			return -EINVAL;
+		}
 	}
 
 	return 0;
@@ -226,20 +231,19 @@ static int nvm_luns_init(struct nvm_dev *dev)
 static int nvm_block_map(u64 slba, u64 nlb, u64 *entries, void *private)
 {
 	struct nvm_dev *dev = private;
-	sector_t max_pages = dev->nr_pages * (dev->sector_size >> 9);
+	sector_t max_pages = dev->total_pages * (dev->sector_size >> 9);
 	u64 elba = slba + nlb;
 	struct nvm_lun *lun;
 	struct nvm_block *blk;
-	sector_t total_blks_per_lun;
+	sector_t total_pgs_per_lun = /* each lun have the same configuration */
+		   dev->luns[0].nr_blocks * dev->luns[0].nr_pages_per_blk;
 	u64 i;
 	int lun_id;
 
-	if (unlikely(elba > dev->nr_pages)) {
+	if (unlikely(elba > dev->total_pages)) {
 		pr_err("nvm: L2P data from device is out of bounds!\n");
 		return -EINVAL;
 	}
-
-	total_blks_per_lun = dev->nr_blks_per_lun * dev->nr_pages_per_blk;
 
 	for (i = 0; i < nlb; i++) {
 		u64 pba = le64_to_cpu(entries[i]);
@@ -256,12 +260,12 @@ static int nvm_block_map(u64 slba, u64 nlb, u64 *entries, void *private)
 			continue;
 
 		/* resolve block from physical address */
-		lun_id = pba / total_blks_per_lun;
+		lun_id = pba / total_pgs_per_lun;
 		lun = &dev->luns[lun_id];
 
 		/* Calculate block offset into lun */
-		pba = pba - (total_blks_per_lun * lun_id);
-		blk = &lun->blocks[pba / dev->nr_pages_per_blk];
+		pba = pba - (total_pgs_per_lun * lun_id);
+		blk = &lun->blocks[pba / lun->nr_pages_per_blk];
 
 		if (!blk->type) {
 			/* at this point, we don't know anything about the
@@ -307,7 +311,7 @@ static int nvm_blocks_init(struct nvm_dev *dev)
 	/* Without bad block table support, we can use the mapping table to get
 	   restore the state of each block. */
 	if (dev->ops->get_l2p_tbl) {
-		ret = dev->ops->get_l2p_tbl(dev->q, 0, dev->nr_pages,
+		ret = dev->ops->get_l2p_tbl(dev->q, 0, dev->total_pages,
 							nvm_block_map, dev);
 		if (ret) {
 			pr_err("nvm: could not read L2P table.\n");
@@ -339,9 +343,8 @@ static void nvm_free(struct nvm_dev *dev)
 	if (!dev)
 		return;
 
-	/* also frees blocks */
+	nvm_blocks_free(dev);
 	nvm_luns_free(dev);
-
 	nvm_core_free(dev);
 }
 
@@ -356,7 +359,7 @@ int nvm_validate_features(struct nvm_dev *dev)
 
 	/* Only default configuration is supported.
 	 * I.e. L2P, No ondrive GC and drive performs ECC */
-	if (gf.rsp != 0 || gf.ext != 0)
+	if (gf.rsp != 0x0 || gf.ext != 0x0)
 		return -EINVAL;
 
 	return 0;
@@ -379,7 +382,6 @@ int nvm_init(struct nvm_dev *dev)
 	if (!dev->q || !dev->ops)
 		return -EINVAL;
 
-	/* TODO: We're limited to the same setup for each channel */
 	if (dev->ops->identify(dev->q, &dev->identity)) {
 		pr_err("nvm: device could not be identified\n");
 		ret = -EINVAL;
@@ -418,14 +420,10 @@ int nvm_init(struct nvm_dev *dev)
 		goto err;
 	}
 
-	/* s->nr_pages_per_blk obtained from nvm_luns_init */
-	if (dev->nr_pages_per_blk > MAX_INVALID_PAGES_STORAGE * BITS_PER_LONG) {
-		pr_err("nvm: number of pages per block too high.");
-		ret = -EINVAL;
+	if (!dev->nr_luns) {
+		pr_err("nvm: device did not expose any luns.\n");
 		goto err;
 	}
-	dev->nr_pages = dev->nr_luns * dev->nr_blks_per_lun *
-							dev->nr_pages_per_blk;
 
 	ret = nvm_blocks_init(dev);
 	if (ret) {
@@ -434,11 +432,10 @@ int nvm_init(struct nvm_dev *dev)
 	}
 
 	pr_info("nvm: allocating %lu physical pages (%lu KB)\n",
-			dev->nr_pages, dev->nr_pages * dev->sector_size / 1024);
+		dev->total_pages, dev->total_pages * dev->sector_size / 1024);
 	pr_info("nvm: luns: %u\n", dev->nr_luns);
-	pr_info("nvm: blocks: %u\n", dev->nr_blks_per_lun);
+	pr_info("nvm: blocks: %lu\n", dev->total_blocks);
 	pr_info("nvm: target sector size=%d\n", dev->sector_size);
-	pr_info("nvm: pages per block: %u\n", dev->nr_pages_per_blk);
 
 	return 0;
 err:
@@ -449,7 +446,6 @@ err:
 
 void nvm_exit(struct nvm_dev *dev)
 {
-	/* TODO: remember outstanding block refs, waiting to be erased... */
 	nvm_free(dev);
 
 	pr_info("nvm: successfully unloaded\n");
@@ -463,7 +459,7 @@ int blk_nvm_register(struct request_queue *q, struct nvm_dev_ops *ops)
 	if (!ops->identify || !ops->get_features)
 		return -EINVAL;
 
-	/* TODO: NVM does not yet support multi-page IOs. */
+	/* does not yet support multi-page IOs. */
 	blk_queue_max_hw_sectors(q, queue_logical_block_size(q) >> 9);
 
 	dev = kzalloc(sizeof(struct nvm_dev), GFP_KERNEL);

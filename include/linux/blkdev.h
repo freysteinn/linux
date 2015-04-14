@@ -1705,20 +1705,17 @@ struct nvm_dev {
 	/* Open-channel SSD stores extra data after the private driver data */
 	unsigned int drv_cmd_size;
 
+	int nr_luns;
 	struct nvm_lun *luns;
 
-	/* Frequently used config variables */
-	/* FIXME: Replace with functions that get data from identity */
-	int nr_luns;
-	int nr_blks_per_lun;
-	int nr_pages_per_blk;
+	/*int nr_blks_per_lun;
+	int nr_pages_per_blk;*/
 	/* Calculated/Cached values. These do not reflect the actual usuable
 	 * blocks at run-time. */
-	unsigned long nr_pages;
+	unsigned long total_pages;
 	unsigned long total_blocks;
 
 	uint32_t sector_size;
-
 };
 
 /* Logical to physical mapping */

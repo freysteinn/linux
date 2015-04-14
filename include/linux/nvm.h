@@ -35,27 +35,22 @@
 
 static inline int block_is_full(struct nvm_block *block)
 {
-	struct nvm_dev *dev = block->lun->dev;
+	struct nvm_lun *lun = block->lun;
 
-	return block->next_page == dev->nr_pages_per_blk;
+	return block->next_page == lun->nr_pages_per_blk;
 }
 
 static inline sector_t block_to_addr(struct nvm_block *block)
 {
-	struct nvm_dev *dev = block->lun->dev;
+	struct nvm_lun *lun = block->lun;
 
-	return block->id * dev->nr_pages_per_blk;
+	return block->id * lun->nr_pages_per_blk;
 }
 
 static inline struct nvm_lun *paddr_to_lun(struct nvm_dev *dev,
 							sector_t p_addr)
 {
-	return &dev->luns[p_addr / (dev->nr_pages / dev->nr_luns)];
-}
-
-static inline int physical_to_slot(struct nvm_dev *dev, sector_t phys)
-{
-	return phys % dev->nr_pages_per_blk;
+	return &dev->luns[p_addr / (dev->total_pages / dev->nr_luns)];
 }
 
 #endif
