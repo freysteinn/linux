@@ -27,7 +27,7 @@
 #include <linux/sem.h>
 #include <linux/bitmap.h>
 
-#include <linux/nvm.h>
+#include <linux/lightnvm.h>
 
 #include "blk.h"
 
