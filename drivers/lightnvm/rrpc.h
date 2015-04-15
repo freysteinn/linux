@@ -13,7 +13,7 @@
 #include <linux/module.h>
 #include <linux/kthread.h>
 
-#include <linux/nvm.h>
+#include <linux/lightnvm.h>
 
 /* We partition the namespace of translation map into these pieces for tracking
  * in-flight addresses. */
