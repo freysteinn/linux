@@ -7,7 +7,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/blk-mq.h>
-#include <linux/nvm.h>
+#include <linux/lightnvm.h>
 #include <linux/hrtimer.h>
 
 struct nullb_cmd {
