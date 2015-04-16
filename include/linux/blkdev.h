@@ -1709,9 +1709,6 @@ struct nvm_dev {
 
 	struct list_head online_targets;
 
-	/* Open-channel SSD stores extra data after the private driver data */
-	unsigned int drv_cmd_size;
-
 	int nr_luns;
 	struct nvm_lun *luns;
 
