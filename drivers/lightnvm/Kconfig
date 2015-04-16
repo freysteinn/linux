@@ -18,12 +18,9 @@ if NVM
 
 config NVM_RRPC
 	tristate "Round-robin Hybrid Open-Channel SSD"
-	depends on BLK_DEV_NVM
 	---help---
 	Allows an open-channel SSD to be exposed as a block device to the
 	host. The target is implemented using a linear mapping table and
 	cost-based garbage collection. It is optimized for 4K IO sizes.
-
-	See Documentation/nvm-rrpc.txt for details.
 
 endif # NVM
