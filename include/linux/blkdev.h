@@ -915,10 +915,17 @@ static inline unsigned int blk_rq_cur_sectors(const struct request *rq)
 	return blk_rq_cur_bytes(rq) >> 9;
 }
 
+#ifdef CONFIG_BLK_DEV_NVM
 static inline sector_t blk_rq_phys_pos(const struct request *rq)
 {
 	return rq->phys_sector;
 }
+#else
+static inline sector_t blk_rq_phys_pos(const struct request *rq)
+{
+	return 0;
+}
+#endif /* CONFIG_BLK_DEV_NVM */
 
 static inline unsigned int blk_queue_get_max_sectors(struct request_queue *q,
 						     unsigned int cmd_flags)
@@ -1780,39 +1787,45 @@ static inline struct nvm_dev *blk_nvm_get_dev(struct request_queue *q)
 {
 	return q->nvm;
 }
-#else
+#else /* CONFIG_BLK_DEV_NVM */
 struct nvm_dev_ops;
+struct nvm_dev;
 struct nvm_lun;
 struct nvm_block;
+struct nvm_per_rq {
+};
 struct nvm_target_type;
 
-struct nvm_target_type *nvm_find_target_type(const char *)
+static inline struct nvm_target_type *nvm_find_target_type(const char *c)
 {
 	return NULL;
 }
-int nvm_register_target(struct nvm_target_type *tt) { return -EINVAL; }
-void nvm_unregister_target(struct nvm_target_type *tt) {}
-static inline int blk_nvm_register(struct request_queue *,
-						struct nvm_dev_ops *)
+static inline int nvm_register_target(struct nvm_target_type *tt)
 {
 	return -EINVAL;
 }
-static inline struct nvm_block *blk_nvm_get_blk(struct nvm_lun *, int)
-{
-	return NULL;
-}
-static inline void blk_nvm_put_blk(struct nvm_block *) {}
-static inline int blk_nvm_erase_blk(struct nvm_dev *, struct nvm_block *)
+static inline void nvm_unregister_target(struct nvm_target_type *tt) {}
+static inline int blk_nvm_register(struct request_queue *q,
+						struct nvm_dev_ops *ops)
 {
 	return -EINVAL;
 }
-static inline int blk_nvm_get_dev(struct request_queue *)
+static inline struct nvm_block *blk_nvm_get_blk(struct nvm_lun *lun, int is_gc)
 {
 	return NULL;
 }
-static inline sector_t blk_nvm_alloc_addr(struct nvm_block *block)
+static inline void blk_nvm_put_blk(struct nvm_block *blk) {}
+static inline int blk_nvm_erase_blk(struct nvm_dev *dev, struct nvm_block *blk)
+{
+	return -EINVAL;
+}
+static inline sector_t blk_nvm_alloc_addr(struct nvm_block *blk)
 {
 	return 0;
+}
+static inline struct nvm_dev *blk_nvm_get_dev(struct request_queue *q)
+{
+	return NULL;
 }
 #endif /* CONFIG_BLK_DEV_NVM */
 

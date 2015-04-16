@@ -1,6 +1,8 @@
 #ifndef NVM_H
 #define NVM_H
 
+#ifdef CONFIG_BLK_DEV_NVM
+
 #include <linux/blkdev.h>
 #include <linux/types.h>
 
@@ -30,8 +32,6 @@
 #define NVM_MSG_PREFIX "nvm"
 #define ADDR_EMPTY (~0ULL)
 
-/* core.c */
-
 static inline int block_is_full(struct nvm_block *block)
 {
 	struct nvm_lun *lun = block->lun;
@@ -52,4 +52,5 @@ static inline struct nvm_lun *paddr_to_lun(struct nvm_dev *dev,
 	return &dev->luns[p_addr / (dev->total_pages / dev->nr_luns)];
 }
 
-#endif
+#endif /* CONFIG_BLK_DEV_NVM */
+#endif /* LIGHTNVM.H */
