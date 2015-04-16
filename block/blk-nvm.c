@@ -58,6 +58,7 @@ int nvm_register_target(struct nvm_target_type *tt)
 
 	return ret;
 }
+EXPORT_SYMBOL(nvm_register_target);
 
 void nvm_unregister_target(struct nvm_target_type *tt)
 {
@@ -68,6 +69,7 @@ void nvm_unregister_target(struct nvm_target_type *tt)
 	list_del(&tt->list);
 	up_write(&_lock);
 }
+EXPORT_SYMBOL(nvm_unregister_target);
 
 static void nvm_reset_block(struct nvm_lun *lun, struct nvm_block *block)
 {
