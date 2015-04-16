@@ -209,7 +209,7 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
-#if CONFIG_BLK_DEV_NVM
+#ifdef CONFIG_BLK_DEV_NVM
 	sector_t phys_sector;
 #endif
 };
