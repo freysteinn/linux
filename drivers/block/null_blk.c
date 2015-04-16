@@ -360,6 +360,12 @@ static void null_request_fn(struct request_queue *q)
 	}
 }
 
+#ifdef CONFIG_BLK_NVM_DEV
+static struct nvm_dev_ops null_nvm_dev_ops = {
+	.identify		= null_nvm_id,
+	.get_features		= null_nvm_get_features,
+};
+
 static int null_nvm_id(struct request_queue *q, struct nvm_id *id)
 {
 	sector_t size = gb * 1024 * 1024 * 1024ULL;
@@ -403,6 +409,9 @@ static int null_nvm_get_features(struct request_queue *q,
 
 	return 0;
 }
+#else
+static struct nvm_dev_ops null_nvm_dev_ops;
+#endif /* CONFIG_BLK_DEV_NVM */
 
 static int null_queue_rq(struct blk_mq_hw_ctx *hctx,
 			 const struct blk_mq_queue_data *bd)
@@ -439,11 +448,6 @@ static int null_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 
 	return 0;
 }
-
-static struct nvm_dev_ops null_nvm_dev_ops = {
-	.identify		= null_nvm_id,
-	.get_features		= null_nvm_get_features,
-};
 
 static struct blk_mq_ops null_mq_ops = {
 	.queue_rq       = null_queue_rq,
@@ -658,8 +662,6 @@ static int null_add_dev(void)
 	if (nvm_enable && queue_mode == NULL_Q_MQ) {
 		if (blk_nvm_register(nullb->q, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
-
-		nullb->q->nvm->drv_cmd_size = sizeof(struct nullb_cmd);
 	}
 
 	sprintf(disk->disk_name, "nullb%d", nullb->index);
