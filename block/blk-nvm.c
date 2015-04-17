@@ -205,6 +205,7 @@ static int nvm_luns_init(struct nvm_dev *dev)
 
 		INIT_LIST_HEAD(&lun->free_list);
 		INIT_LIST_HEAD(&lun->used_list);
+		INIT_LIST_HEAD(&lun->bb_list);
 
 		lun->id = i;
 		lun->dev = dev;
@@ -225,6 +226,31 @@ static int nvm_luns_init(struct nvm_dev *dev)
 			pr_err("nvm: number of pages per block too high.");
 			return -EINVAL;
 		}
+	}
+
+	return 0;
+}
+
+static int nvm_block_bb(u32 lun_id, void *bb_bitmap, unsigned int nr_blocks,
+								void *private)
+{
+	struct nvm_dev *dev = private;
+	struct nvm_lun *lun = &dev->luns[lun_id];
+	struct nvm_block *block;
+	int i;
+
+	if (unlikely(bitmap_empty(bb_bitmap, nr_blocks)))
+		return 0;
+
+	i = -1;
+	while ((i = find_next_bit(bb_bitmap, nr_blocks, i + 1)) <
+			nr_blocks) {
+		block = &lun->blocks[i];
+		if (!block) {
+			pr_err("nvm: BB data is out of bounds!\n");
+			return -EINVAL;
+		}
+		list_move_tail(&block->list, &lun->bb_list);
 	}
 
 	return 0;
@@ -308,10 +334,16 @@ static int nvm_blocks_init(struct nvm_dev *dev)
 
 			list_add_tail(&block->list, &lun->free_list);
 		}
+
+		if (dev->ops->get_bb_tbl) {
+			ret = dev->ops->get_bb_tbl(dev->q, lun->id,
+			lun->nr_blocks, nvm_block_bb, dev);
+			if (ret) {
+				pr_err("nvm: could not read BB table\n");
+			}
+		}
 	}
 
-	/* Without bad block table support, we can use the mapping table to get
-	   restore the state of each block. */
 	if (dev->ops->get_l2p_tbl) {
 		ret = dev->ops->get_l2p_tbl(dev->q, 0, dev->total_pages,
 							nvm_block_map, dev);
