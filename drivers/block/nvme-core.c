@@ -954,7 +954,6 @@ static int nvme_nvm_get_bb_tbl(struct request_queue *q, int lunid,
 	void *bb_bitmap;
 	int res = 0;
 
-	printk("nvme_nvm_get_bb_tbl: nr_blocks: %d\n", nr_blocks);
 	length = ((nr_blocks >> 15) + 1) * PAGE_SIZE;
 	bb_bitmap = dma_alloc_coherent(&pdev->dev, length, &dma_addr,
 								GFP_KERNEL);

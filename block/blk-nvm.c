@@ -235,20 +235,22 @@ static int nvm_block_bb(u32 lun_id, void *bb_bitmap, unsigned int nr_blocks,
 								void *private)
 {
 	struct nvm_dev *dev = private;
-	struct nvm_lun *lun = &(dev->luns[lun_id]);
+	struct nvm_lun *lun = &dev->luns[lun_id];
 	struct nvm_block *block;
+	int i;
 
-	if (likely(!bitmap_empty(bb_bitmap, nr_blocks))) {
-		unsigned int i = -1;
-		while ((i = find_next_bit(bb_bitmap, nr_blocks, i + 1)) <
-				nr_blocks) {
-			block = &(lun->blocks[i]);
-			if (!block) {
-				pr_err("nvm: BB data is out of bounds!\n");
-				return -EINVAL;
-			}
-			list_add_tail(&block->list, &lun->bb_list);
+	if (unlikely(bitmap_empty(bb_bitmap, nr_blocks)))
+		return 0;
+
+	i = -1;
+	while ((i = find_next_bit(bb_bitmap, nr_blocks, i + 1)) <
+			nr_blocks) {
+		block = &lun->blocks[i];
+		if (!block) {
+			pr_err("nvm: BB data is out of bounds!\n");
+			return -EINVAL;
 		}
+		list_move_tail(&block->list, &lun->bb_list);
 	}
 
 	return 0;
