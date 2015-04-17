@@ -661,7 +661,7 @@ int nvme_nvm_get_l2p_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u64 slba,
 }
 
 int nvme_nvm_get_bb_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u32 lbb,
-					u16 dma_npages, struct nvme_iod *iod)
+					struct nvme_iod *iod)
 {
 	struct nvme_command c;
 	unsigned length;
@@ -673,9 +673,7 @@ int nvme_nvm_get_bb_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u32 lbb,
 	c.lnvm_get_bb.lbb = cpu_to_le32(lbb);
 
 	length = nvme_setup_prps(dev, iod, iod->length, GFP_KERNEL);
-	/* TODO: Look into how to check this properly */
-	/* if ((length >> 12) != dma_npages) */
-		/* return -ENOMEM; */
+	c.lnvm_get_bb.prp1_len = cpu_to_le32(length);
 
 	c.common.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
 	c.common.prp2 = cpu_to_le64(iod->first_dma);
@@ -950,25 +948,25 @@ static int nvme_nvm_get_bb_tbl(struct request_queue *q, int lunid,
 	struct nvme_iod *iod;
 	dma_addr_t dma_addr;
 	u32 cmd_lbb = (u32)lunid;
-	u16 length;
 	void *bb_bitmap;
+	u16 bb_bitmap_size;
 	int res = 0;
 
-	length = ((nr_blocks >> 15) + 1) * PAGE_SIZE;
-	bb_bitmap = dma_alloc_coherent(&pdev->dev, length, &dma_addr,
+	bb_bitmap_size = ((nr_blocks >> 15) + 1) * PAGE_SIZE;
+	bb_bitmap = dma_alloc_coherent(&pdev->dev, bb_bitmap_size, &dma_addr,
 								GFP_KERNEL);
-	bitmap_zero(bb_bitmap, nr_blocks);
-
 	if (!bb_bitmap)
 		return -ENOMEM;
 
-	iod = nvme_get_dma_iod(dev, bb_bitmap, length);
+	bitmap_zero(bb_bitmap, nr_blocks);
+
+	iod = nvme_get_dma_iod(dev, bb_bitmap, bb_bitmap_size);
 	if (!iod) {
 		res = -ENOMEM;
 		goto out;
 	}
 
-	res = nvme_nvm_get_bb_tbl_cmd(dev, ns->ns_id, cmd_lbb, length, iod);
+	res = nvme_nvm_get_bb_tbl_cmd(dev, ns->ns_id, cmd_lbb, iod);
 	if (res) {
 		dev_err(&pdev->dev, "Get Bad Block table failed (%d)\n", res);
 		res = -EIO;
@@ -984,7 +982,7 @@ static int nvme_nvm_get_bb_tbl(struct request_queue *q, int lunid,
 free_iod:
 	nvme_free_iod(dev, iod);
 out:
-	dma_free_coherent(&pdev->dev, length, bb_bitmap, dma_addr);
+	dma_free_coherent(&pdev->dev, bb_bitmap_size, bb_bitmap, dma_addr);
 	return res;
 }
 
