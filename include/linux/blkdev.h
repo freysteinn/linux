@@ -1630,12 +1630,15 @@ static inline bool blk_integrity_is_initialized(struct gendisk *g)
 #include <uapi/linux/nvm.h>
 
 typedef int (nvm_l2p_update_fn)(u64, u64, u64 *, void *);
+typedef int (nvm_bb_update_fn)(u32, void *, unsigned int, void *);
 typedef int (nvm_id_fn)(struct request_queue *, struct nvm_id *);
 typedef int (nvm_get_features_fn)(struct request_queue *,
 				  struct nvm_get_features *);
 typedef int (nvm_set_rsp_fn)(struct request_queue *, u64);
 typedef int (nvm_get_l2p_tbl_fn)(struct request_queue *, u64, u64,
-				 nvm_l2p_update_fn *, void *);
+				nvm_l2p_update_fn *, void *);
+typedef int (nvm_op_bb_tbl_fn)(struct request_queue *, int, unsigned int,
+				nvm_bb_update_fn *, void *);
 typedef int (nvm_erase_blk_fn)(struct request_queue *, sector_t);
 
 struct nvm_dev_ops {
@@ -1643,6 +1646,8 @@ struct nvm_dev_ops {
 	nvm_get_features_fn	*get_features;
 	nvm_set_rsp_fn		*set_responsibility;
 	nvm_get_l2p_tbl_fn	*get_l2p_tbl;
+	nvm_op_bb_tbl_fn	*set_bb_tbl;
+	nvm_op_bb_tbl_fn	*get_bb_tbl;
 
 	nvm_erase_blk_fn	*erase_block;
 };
@@ -1662,7 +1667,10 @@ struct nvm_lun {
 	/* lun block lists */
 	struct list_head used_list;	/* In-use blocks */
 	struct list_head free_list;	/* Not used blocks i.e. released
-					 *  and ready for use */
+					 * and ready for use */
+	struct list_head bb_list;	/* Bad blocks. Mutually exclusive with
+					   free_list and used_list */
+
 
 	struct {
 		spinlock_t lock;

@@ -329,6 +329,20 @@ struct nvme_lnvm_l2ptbl_command {
 	__le16			cdw14[5];
 };
 
+struct nvme_lnvm_bbtbl_command {
+	__u8			opcode;
+	__u8			flags;
+	__u16			command_id;
+	__le32			nsid;
+	__u64			rsvd[2];
+	__le64			prp1;
+	__le64			prp2;
+	__le32			prp1_len;
+	__le32			prp2_len;
+	__le32			lbb;
+	__u32			rsvd11[3];
+};
+
 struct nvme_lnvm_set_resp_command {
 	__u8			opcode;
 	__u8			flags;
@@ -584,6 +598,8 @@ struct nvme_command {
 		struct nvme_lnvm_identify lnvm_identify;
 		struct nvme_lnvm_hb_write_command lnvm_hb_w;
 		struct nvme_lnvm_l2ptbl_command lnvm_l2p;
+		struct nvme_lnvm_bbtbl_command lnvm_get_bb;
+		struct nvme_lnvm_bbtbl_command lnvm_set_bb;
 		struct nvme_lnvm_set_resp_command lnvm_resp;
 		struct nvme_lnvm_erase_block lnvm_erase;
 	};

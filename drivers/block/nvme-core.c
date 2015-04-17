@@ -137,6 +137,7 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_smart_log) != 512);
 	BUILD_BUG_ON(sizeof(struct nvme_lnvm_hb_write_command) != 64);
 	BUILD_BUG_ON(sizeof(struct nvme_lnvm_l2ptbl_command) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_lnvm_bbtbl_command) != 64);
 }
 
 typedef void (*nvme_completion_fn)(struct nvme_queue *, void *,
@@ -659,6 +660,29 @@ int nvme_nvm_get_l2p_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u64 slba,
 	return nvme_submit_admin_cmd(dev, &c, NULL);
 }
 
+int nvme_nvm_get_bb_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u32 lbb,
+					u16 dma_npages, struct nvme_iod *iod)
+{
+	struct nvme_command c;
+	unsigned length;
+
+	memset(&c, 0, sizeof(c));
+	c.common.opcode = lnvm_admin_get_bb_tbl;
+	c.common.nsid = cpu_to_le32(nsid);
+
+	c.lnvm_get_bb.lbb = cpu_to_le32(lbb);
+
+	length = nvme_setup_prps(dev, iod, iod->length, GFP_KERNEL);
+	/* TODO: Look into how to check this properly */
+	/* if ((length >> 12) != dma_npages) */
+		/* return -ENOMEM; */
+
+	c.common.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	c.common.prp2 = cpu_to_le64(iod->first_dma);
+
+	return nvme_submit_admin_cmd(dev, &c, NULL);
+}
+
 int nvme_nvm_erase_block_cmd(struct nvme_dev *dev, struct nvme_ns *ns,
 						sector_t block_id)
 {
@@ -910,6 +934,61 @@ out:
 	return res;
 }
 
+static int nvme_nvm_set_bb_tbl(struct request_queue *q, int lunid,
+	unsigned int nr_blocks, nvm_bb_update_fn *update_bbtbl, void *private)
+{
+	/* TODO: implement logic */
+	return 0;
+}
+
+static int nvme_nvm_get_bb_tbl(struct request_queue *q, int lunid,
+	unsigned int nr_blocks, nvm_bb_update_fn *update_bbtbl, void *private)
+{
+	struct nvme_ns *ns = q->queuedata;
+	struct nvme_dev *dev = ns->dev;
+	struct pci_dev *pdev = dev->pci_dev;
+	struct nvme_iod *iod;
+	dma_addr_t dma_addr;
+	u32 cmd_lbb = (u32)lunid;
+	u16 length;
+	void *bb_bitmap;
+	int res = 0;
+
+	printk("nvme_nvm_get_bb_tbl: nr_blocks: %d\n", nr_blocks);
+	length = ((nr_blocks >> 15) + 1) * PAGE_SIZE;
+	bb_bitmap = dma_alloc_coherent(&pdev->dev, length, &dma_addr,
+								GFP_KERNEL);
+	bitmap_zero(bb_bitmap, nr_blocks);
+
+	if (!bb_bitmap)
+		return -ENOMEM;
+
+	iod = nvme_get_dma_iod(dev, bb_bitmap, length);
+	if (!iod) {
+		res = -ENOMEM;
+		goto out;
+	}
+
+	res = nvme_nvm_get_bb_tbl_cmd(dev, ns->ns_id, cmd_lbb, length, iod);
+	if (res) {
+		dev_err(&pdev->dev, "Get Bad Block table failed (%d)\n", res);
+		res = -EIO;
+		goto free_iod;
+	}
+
+	res = update_bbtbl(cmd_lbb, bb_bitmap, nr_blocks, private);
+	if (res) {
+		res = -EINTR;
+		goto free_iod;
+	}
+
+free_iod:
+	nvme_free_iod(dev, iod);
+out:
+	dma_free_coherent(&pdev->dev, length, bb_bitmap, dma_addr);
+	return res;
+}
+
 static int nvme_nvm_erase_block(struct request_queue *q, sector_t block_id)
 {
 	struct nvme_ns *ns = q->queuedata;
@@ -923,6 +1002,8 @@ static struct nvm_dev_ops nvme_nvm_dev_ops = {
 	.get_features		= nvme_nvm_get_features,
 	.set_responsibility	= nvme_nvm_set_responsibility,
 	.get_l2p_tbl		= nvme_nvm_get_l2p_tbl,
+	.set_bb_tbl		= nvme_nvm_set_bb_tbl,
+	.get_bb_tbl		= nvme_nvm_get_bb_tbl,
 	.erase_block		= nvme_nvm_erase_block,
 };
 
