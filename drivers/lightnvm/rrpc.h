@@ -48,7 +48,8 @@ struct rrpc_lun {
 };
 
 struct rrpc {
-	struct bio_nvm_payload payload;
+	/* instance must be kept in top to resolve rrpc in prep/unprep */
+	struct nvm_target_instance instance;
 
 	struct nvm_dev *q_nvm;
 	struct request_queue *q_dev;
