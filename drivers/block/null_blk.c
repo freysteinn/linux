@@ -7,8 +7,8 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/blk-mq.h>
-#include <linux/lightnvm.h>
 #include <linux/hrtimer.h>
+#include <linux/lightnvm.h>
 
 struct nullb_cmd {
 	struct list_head list;
@@ -287,6 +287,8 @@ static inline void null_handle_cmd(struct nullb_cmd *cmd)
 	case NULL_IRQ_SOFTIRQ:
 		switch (queue_mode)  {
 		case NULL_Q_MQ:
+			if (nvm_enable)
+				nvm_unprep_rq(cmd->rq);
 			blk_mq_complete_request(cmd->rq);
 			break;
 		case NULL_Q_RQ:
@@ -360,11 +362,7 @@ static void null_request_fn(struct request_queue *q)
 	}
 }
 
-#ifdef CONFIG_BLK_NVM_DEV
-static struct nvm_dev_ops null_nvm_dev_ops = {
-	.identify		= null_nvm_id,
-	.get_features		= null_nvm_get_features,
-};
+#ifdef CONFIG_NVM
 
 static int null_nvm_id(struct request_queue *q, struct nvm_id *id)
 {
@@ -409,14 +407,26 @@ static int null_nvm_get_features(struct request_queue *q,
 
 	return 0;
 }
+
+static struct nvm_dev_ops null_nvm_dev_ops = {
+	.identify		= null_nvm_id,
+	.get_features		= null_nvm_get_features,
+};
 #else
 static struct nvm_dev_ops null_nvm_dev_ops;
-#endif /* CONFIG_BLK_DEV_NVM */
+#endif /* CONFIG_NVM */
 
 static int null_queue_rq(struct blk_mq_hw_ctx *hctx,
 			 const struct blk_mq_queue_data *bd)
 {
 	struct nullb_cmd *cmd = blk_mq_rq_to_pdu(bd->rq);
+	int ret;
+
+	if (nvm_enable) {
+		ret = nvm_prep_rq(bd->rq);
+		if (ret)
+			return ret;
+	}
 
 	cmd->rq = bd->rq;
 	cmd->nq = hctx->driver_data;
@@ -659,13 +669,12 @@ static int null_add_dev(void)
 	disk->private_data	= nullb;
 	disk->queue		= nullb->q;
 
-	if (nvm_enable && queue_mode == NULL_Q_MQ) {
-		if (blk_nvm_register(nullb->q, &null_nvm_dev_ops))
+	if (nvm_enable && nvm_register(disk, &null_nvm_dev_ops))
 			goto out_cleanup_nvm;
-	}
 
 	sprintf(disk->disk_name, "nullb%d", nullb->index);
 	add_disk(disk);
+	nvm_attach_sysfs(disk);
 	return 0;
 
 out_cleanup_nvm:
