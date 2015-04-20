@@ -417,9 +417,8 @@ static inline void iod_init(struct nvme_iod *iod, unsigned nbytes,
 	iod->nents = 0;
 }
 
-static struct nvme_iod *
-__nvme_alloc_iod(unsigned nseg, unsigned bytes, struct nvme_dev *dev,
-		 unsigned long priv, gfp_t gfp)
+struct nvme_iod *nvme_alloc_phys_seg_iod(unsigned nseg, unsigned bytes,
+			struct nvme_dev *dev,  unsigned long priv, gfp_t gfp)
 {
 	struct nvme_iod *iod = kmalloc(sizeof(struct nvme_iod) +
 				sizeof(__le64 *) * nvme_npages(bytes, dev) +
@@ -450,7 +449,7 @@ static struct nvme_iod *nvme_alloc_iod(struct request *rq, struct nvme_dev *dev,
 		return iod;
 	}
 
-	return __nvme_alloc_iod(rq->nr_phys_segments, size, dev,
+	return nvme_alloc_phys_seg_iod(rq->nr_phys_segments, size, dev,
 				(unsigned long) rq, gfp);
 }
 
@@ -2120,7 +2119,7 @@ struct nvme_iod *nvme_map_user_pages(struct nvme_dev *dev, int write,
 	}
 
 	err = -ENOMEM;
-	iod = __nvme_alloc_iod(count, length, dev, 0, GFP_KERNEL);
+	iod = nvme_alloc_phys_seg_iod(count, length, dev, 0, GFP_KERNEL);
 	if (!iod)
 		goto put_pages;
 
