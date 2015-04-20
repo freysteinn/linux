@@ -209,7 +209,7 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
-#ifdef CONFIG_BLK_DEV_NVM
+#ifdef CONFIG_NVM
 	sector_t phys_sector;
 #endif
 };
@@ -915,7 +915,7 @@ static inline unsigned int blk_rq_cur_sectors(const struct request *rq)
 	return blk_rq_cur_bytes(rq) >> 9;
 }
 
-#ifdef CONFIG_BLK_DEV_NVM
+#ifdef CONFIG_NVM
 static inline sector_t blk_rq_phys_pos(const struct request *rq)
 {
 	return rq->phys_sector;
@@ -925,7 +925,7 @@ static inline sector_t blk_rq_phys_pos(const struct request *rq)
 {
 	return 0;
 }
-#endif /* CONFIG_BLK_DEV_NVM */
+#endif /* CONFIG_NVM */
 
 static inline unsigned int blk_queue_get_max_sectors(struct request_queue *q,
 						     unsigned int cmd_flags)
