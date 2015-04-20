@@ -209,6 +209,9 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
+#ifdef CONFIG_NVM
+	sector_t phys_sector;
+#endif
 };
 
 static inline unsigned short req_get_ioprio(struct request *req)
