@@ -221,9 +221,6 @@ static void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
 	rq->end_io = NULL;
 	rq->end_io_data = NULL;
 	rq->next_rq = NULL;
-#ifdef CONFIG_BLK_DEV_NVM
-	rq->phys_sector = 0;
-#endif
 
 	ctx->rq_dispatched[rw_is_sync(rw_flags)]++;
 }
@@ -341,11 +338,6 @@ EXPORT_SYMBOL(__blk_mq_end_request);
 
 void blk_mq_end_request(struct request *rq, int error)
 {
-	struct request_queue *q = rq->q;
-
-	if (q->unprep_rq_fn)
-		q->unprep_rq_fn(q, rq);
-
 	if (blk_update_request(rq, error, blk_rq_bytes(rq)))
 		BUG();
 	__blk_mq_end_request(rq, error);
@@ -761,17 +753,6 @@ static void flush_busy_ctxs(struct blk_mq_hw_ctx *hctx, struct list_head *list)
 	}
 }
 
-static int blk_mq_prep_rq(struct request_queue *q, struct request *rq)
-{
-	if (!q->prep_rq_fn)
-		return 0;
-
-	if (rq->cmd_flags & REQ_DONTPREP)
-		return 0;
-
-	return q->prep_rq_fn(q, rq);
-}
-
 /*
  * Run this hardware queue, pulling any software queues mapped to it in.
  * Note that this function currently has various problems around ordering
@@ -831,14 +812,10 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 		bd.list = dptr;
 		bd.last = list_empty(&rq_list);
 
-		ret = blk_mq_prep_rq(q, rq);
-		if (likely(!ret))
-			ret = q->mq_ops->queue_rq(hctx, &bd);
+		ret = q->mq_ops->queue_rq(hctx, &bd);
 		switch (ret) {
 		case BLK_MQ_RQ_QUEUE_OK:
 			queued++;
-			continue;
-		case BLK_MQ_RQ_QUEUE_DONE:
 			continue;
 		case BLK_MQ_RQ_QUEUE_BUSY:
 			list_add(&rq->queuelist, &rq_list);
@@ -1293,14 +1270,10 @@ static void blk_mq_make_request(struct request_queue *q, struct bio *bio)
 		 * error (busy), just add it to our list as we previously
 		 * would have done
 		 */
-		ret = blk_mq_prep_rq(q, rq);
-		if (likely(!ret))
-			ret = q->mq_ops->queue_rq(data.hctx, &bd);
+		ret = q->mq_ops->queue_rq(data.hctx, &bd);
 		if (ret == BLK_MQ_RQ_QUEUE_OK)
 			goto done;
 		else {
-			if (ret == BLK_MQ_RQ_QUEUE_DONE)
-				goto done;
 			__blk_mq_requeue_request(rq);
 
 			if (ret == BLK_MQ_RQ_QUEUE_ERROR) {
@@ -1448,7 +1421,6 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 	struct blk_mq_tags *tags;
 	unsigned int i, j, entries_per_page, max_order = 4;
 	size_t rq_size, left;
-	unsigned int cmd_size = set->cmd_size;
 
 	tags = blk_mq_init_tags(set->queue_depth, set->reserved_tags,
 				set->numa_node,
@@ -1466,14 +1438,11 @@ static struct blk_mq_tags *blk_mq_init_rq_map(struct blk_mq_tag_set *set,
 		return NULL;
 	}
 
-	if (set->flags & BLK_MQ_F_NVM)
-		cmd_size += sizeof(struct nvm_per_rq);
-
 	/*
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + cmd_size,
+	rq_size = round_up(sizeof(struct request) + set->cmd_size,
 				cache_line_size());
 	left = rq_size * set->queue_depth;
 
@@ -1984,9 +1953,6 @@ struct request_queue *blk_mq_init_queue(struct blk_mq_tag_set *set)
 
 	if (!(set->flags & BLK_MQ_F_SG_MERGE))
 		q->queue_flags |= 1 << QUEUE_FLAG_NO_SG_MERGE;
-
-	if (set->flags & BLK_MQ_F_NVM)
-		q->queue_flags |= 1 << QUEUE_FLAG_NVM;
 
 	q->sg_reserved_size = INT_MAX;
 
