@@ -568,12 +568,6 @@ int blk_register_queue(struct gendisk *disk)
 	if (ret)
 		return ret;
 
-	if (blk_queue_nvm(q)) {
-		ret = blk_nvm_init_sysfs(dev);
-		if (ret)
-			return ret;
-	}
-
 	ret = kobject_add(&q->kobj, kobject_get(&dev->kobj), "%s", "queue");
 	if (ret < 0) {
 		blk_trace_remove_sysfs(dev);
@@ -606,11 +600,6 @@ void blk_unregister_queue(struct gendisk *disk)
 
 	if (WARN_ON(!q))
 		return;
-
-	if (blk_queue_nvm(q)) {
-		blk_nvm_unregister(q);
-		blk_nvm_remove_sysfs(disk_to_dev(disk));
-	}
 
 	if (q->mq_ops)
 		blk_mq_unregister_disk(disk);

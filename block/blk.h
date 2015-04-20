@@ -281,20 +281,4 @@ static inline int blk_throtl_init(struct request_queue *q) { return 0; }
 static inline void blk_throtl_exit(struct request_queue *q) { }
 #endif /* CONFIG_BLK_DEV_THROTTLING */
 
-#ifdef CONFIG_BLK_DEV_NVM
-struct nvm_target {
-	struct list_head list;
-	struct nvm_target_type *type;
-	struct gendisk *disk;
-};
-
-extern void blk_nvm_unregister(struct request_queue *);
-extern int blk_nvm_init_sysfs(struct device *);
-extern void blk_nvm_remove_sysfs(struct device *);
-#else
-static inline void blk_nvm_unregister(struct request_queue *q) { }
-static inline int blk_nvm_init_sysfs(struct device *dev) { return 0; }
-static inline void blk_nvm_remove_sysfs(struct device *dev) { }
-#endif /* CONFIG_BLK_DEV_NVM */
-
 #endif /* BLK_INTERNAL_H */
