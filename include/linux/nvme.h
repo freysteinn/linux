@@ -147,6 +147,9 @@ static inline u64 nvme_block_nr(struct nvme_ns *ns, sector_t sector)
 	return (sector >> (ns->lba_shift - 9));
 }
 
+typedef void (nvme_prepare_iod_command)(struct nvme_command *, struct request *,
+				struct nvme_iod *, struct nvme_ns *, u16, u32);
+
 /**
  * nvme_free_iod - frees an nvme_iod
  * @dev: The device that the I/O was submitted to
@@ -179,4 +182,9 @@ int nvme_sg_io(struct nvme_ns *ns, struct sg_io_hdr __user *u_hdr);
 int nvme_sg_io32(struct nvme_ns *ns, unsigned long arg);
 int nvme_sg_get_version_num(int __user *ip);
 
+int nvme_nvm_submit_io(struct nvme_ns *ns, struct nvme_user_io *io);
+int nvme_nvm_register(struct gendisk *disk, const struct device *dev);
+inline void nvme_nvm_prepare_iod_command(struct nvme_command *cmnd,
+		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
+		u16 control, u32 dsmgmt);
 #endif /* _LINUX_NVME_H */
