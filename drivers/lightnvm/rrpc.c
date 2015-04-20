@@ -234,7 +234,7 @@ try:
 		bio->bi_rw |= (READ | REQ_NVM_NO_INFLIGHT);
 		bio->bi_private = &wait;
 		bio->bi_end_io = rrpc_end_sync_bio;
-		bio->bi_nvm = &rrpc->payload;
+		bio->bi_nvm = &rrpc->instance.payload;
 
 		/* TODO: may fail when EXP_PG_SIZE > PAGE_SIZE */
 		bio_add_pc_page(q, bio, page, EXPOSED_PAGE_SIZE, 0);
@@ -251,7 +251,7 @@ try:
 		bio->bi_rw |= (WRITE | REQ_NVM_NO_INFLIGHT);
 		bio->bi_private = &wait;
 		bio->bi_end_io = rrpc_end_sync_bio;
-		bio->bi_nvm = &rrpc->payload;
+		bio->bi_nvm = &rrpc->instance.payload;
 		/* TODO: may fail when EXP_PG_SIZE > PAGE_SIZE */
 		bio_add_pc_page(q, bio, page, EXPOSED_PAGE_SIZE, 0);
 
@@ -289,8 +289,8 @@ static void rrpc_block_gc(struct work_struct *work)
 	if (rrpc_move_valid_pages(rrpc, block))
 		goto done;
 
-	blk_nvm_erase_blk(dev, block);
-	blk_nvm_put_blk(block);
+	nvm_erase_blk(dev, block);
+	nvm_put_blk(block);
 done:
 	mempool_free(gcb, rrpc->gcb_pool);
 }
@@ -502,23 +502,23 @@ static struct nvm_addr *rrpc_map_page(struct rrpc *rrpc, sector_t laddr,
 	spin_lock(&rlun->lock);
 
 	p_block = rlun->cur;
-	p_addr = blk_nvm_alloc_addr(p_block);
+	p_addr = nvm_alloc_addr(p_block);
 
 	if (p_addr == ADDR_EMPTY) {
-		p_block = blk_nvm_get_blk(lun, 0);
+		p_block = nvm_get_blk(lun, 0);
 
 		if (!p_block) {
 			if (is_gc) {
-				p_addr = blk_nvm_alloc_addr(rlun->gc_cur);
+				p_addr = nvm_alloc_addr(rlun->gc_cur);
 				if (p_addr == ADDR_EMPTY) {
-					p_block = blk_nvm_get_blk(lun, 1);
+					p_block = nvm_get_blk(lun, 1);
 					if (!p_block) {
 						pr_err("rrpc: no more blocks");
 						goto finished;
 					} else {
 						rlun->gc_cur = p_block;
 						p_addr =
-					       blk_nvm_alloc_addr(rlun->gc_cur);
+						  nvm_alloc_addr(rlun->gc_cur);
 					}
 				}
 				p_block = rlun->gc_cur;
@@ -527,7 +527,7 @@ static struct nvm_addr *rrpc_map_page(struct rrpc *rrpc, sector_t laddr,
 		}
 
 		rrpc_set_lun_cur(rlun, p_block);
-		p_addr = blk_nvm_alloc_addr(p_block);
+		p_addr = nvm_alloc_addr(p_block);
 	}
 
 finished:
@@ -550,8 +550,9 @@ err:
 	return NULL;
 }
 
-static void __rrpc_unprep_rq(struct rrpc *rrpc, struct request *rq)
+static void rrpc_unprep_rq(struct request *rq, void *private)
 {
+	struct rrpc *rrpc = private;
 	struct nvm_per_rq *pb = get_per_rq_data(rq);
 	struct nvm_addr *p = pb->addr;
 	struct nvm_block *block = p->block;
@@ -583,21 +584,6 @@ done:
 	mempool_free(pb->addr, rrpc->addr_pool);
 }
 
-static void rrpc_unprep_rq(struct request_queue *q, struct request *rq)
-{
-	struct rrpc *rrpc;
-	struct bio *bio;
-
-	bio = rq->bio;
-	if (unlikely(!bio))
-		return;
-
-	rrpc = container_of(bio->bi_nvm, struct rrpc, payload);
-
-	if (rq->cmd_flags & REQ_NVM_MAPPED)
-		__rrpc_unprep_rq(rrpc, rq);
-}
-
 /* lookup the primary translation table. If there isn't an associated block to
  * the addr. We assume that there is no data and doesn't take a ref */
 static struct nvm_addr *rrpc_lookup_ltop(struct rrpc *rrpc, sector_t laddr)
@@ -622,7 +608,7 @@ static int rrpc_requeue_and_kick(struct rrpc *rrpc, struct request *rq)
 {
 	blk_mq_requeue_request(rq);
 	blk_mq_kick_requeue_list(rrpc->q_dev);
-	return BLK_MQ_RQ_QUEUE_DONE;
+	return BLK_MQ_RQ_QUEUE_OK;
 }
 
 static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
@@ -646,7 +632,7 @@ static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 	else {
 		rrpc_unlock_rq(rrpc, rq);
 		blk_mq_end_request(rq, 0);
-		return BLK_MQ_RQ_QUEUE_DONE;
+		return BLK_MQ_RQ_QUEUE_OK;
 	}
 
 	pb = get_per_rq_data(rq);
@@ -684,8 +670,9 @@ static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
 	return BLK_MQ_RQ_QUEUE_OK;
 }
 
-static int __rrpc_prep_rq(struct rrpc *rrpc, struct request *rq)
+static int rrpc_prep_rq(struct request *rq, void *private)
 {
+	struct rrpc *rrpc = private;
 	int rw = rq_data_dir(rq);
 	int ret;
 
@@ -700,28 +687,6 @@ static int __rrpc_prep_rq(struct rrpc *rrpc, struct request *rq)
 	return ret;
 }
 
-static int rrpc_prep_rq(struct request_queue *q, struct request *rq)
-{
-	struct rrpc *rrpc;
-	struct bio *bio;
-
-	bio = rq->bio;
-	if (unlikely(!bio))
-		return 0;
-
-	if (unlikely(!bio->bi_nvm)) {
-		if (bio_data_dir(bio) == WRITE) {
-			pr_warn("nvm: attempting to write without FTL.\n");
-			return BLK_MQ_RQ_QUEUE_ERROR;
-		}
-		return BLK_MQ_RQ_QUEUE_OK;
-	}
-
-	rrpc = container_of(bio->bi_nvm, struct rrpc, payload);
-
-	return __rrpc_prep_rq(rrpc, rq);
-}
-
 static void rrpc_make_rq(struct request_queue *q, struct bio *bio)
 {
 	struct rrpc *rrpc = q->queuedata;
@@ -731,7 +696,7 @@ static void rrpc_make_rq(struct request_queue *q, struct bio *bio)
 		return;
 	}
 
-	bio->bi_nvm = &rrpc->payload;
+	bio->bi_nvm = &rrpc->instance.payload;
 	bio->bi_bdev = rrpc->q_bdev;
 
 	generic_make_request(bio);
@@ -1079,14 +1044,14 @@ static int rrpc_luns_configure(struct rrpc *rrpc)
 	for (i = 0; i < rrpc->nr_luns; i++) {
 		rlun = &rrpc->luns[i];
 
-		blk = blk_nvm_get_blk(rlun->parent, 0);
+		blk = nvm_get_blk(rlun->parent, 0);
 		if (!blk)
 			return -EINVAL;
 
 		rrpc_set_lun_cur(rlun, blk);
 
 		/* Emergency gc block */
-		blk = blk_nvm_get_blk(rlun->parent, 1);
+		blk = nvm_get_blk(rlun->parent, 1);
 		if (!blk)
 			return -EINVAL;
 		rlun->gc_cur = blk;
@@ -1095,27 +1060,30 @@ static int rrpc_luns_configure(struct rrpc *rrpc)
 	return 0;
 }
 
-static void *rrpc_init(struct request_queue *qdev,
-			struct request_queue *qtarget, struct gendisk *qdisk,
-			struct gendisk *tdisk, int lun_begin, int lun_end)
+static struct nvm_target_type tt_rrpc;
+
+static void *rrpc_init(struct gendisk *bdisk, struct gendisk *tdisk,
+						int lun_begin, int lun_end)
 {
+	struct request_queue *bqueue = bdisk->queue;
+	struct request_queue *tqueue = tdisk->queue;
 	struct nvm_dev *dev;
 	struct block_device *bdev;
 	struct rrpc *rrpc;
 	int ret;
 
-	if (!blk_queue_nvm(qdev)) {
+	if (!nvm_get_dev(bdisk)) {
 		pr_err("nvm: block device not supported.\n");
 		return ERR_PTR(-EINVAL);
 	}
 
-	bdev = bdget_disk(qdisk, 0);
+	bdev = bdget_disk(bdisk, 0);
 	if (blkdev_get(bdev, FMODE_WRITE | FMODE_READ, NULL)) {
 		pr_err("nvm: could not access backing device\n");
 		return ERR_PTR(-EINVAL);
 	}
 
-	dev = blk_nvm_get_dev(qdev);
+	dev = nvm_get_dev(bdisk);
 
 	rrpc = kzalloc(sizeof(struct rrpc), GFP_KERNEL);
 	if (!rrpc) {
@@ -1123,10 +1091,11 @@ static void *rrpc_init(struct request_queue *qdev,
 		goto err;
 	}
 
-	rrpc->q_dev = qdev;
-	rrpc->q_nvm = qdev->nvm;
+	rrpc->q_dev = bqueue;
+	rrpc->q_nvm = bdisk->nvm;
 	rrpc->q_bdev = bdev;
 	rrpc->nr_luns = lun_end - lun_begin + 1;
+	rrpc->instance.tt = &tt_rrpc;
 
 	/* simple round-robin strategy */
 	atomic_set(&rrpc->next_lun, -1);
@@ -1172,8 +1141,8 @@ static void *rrpc_init(struct request_queue *qdev,
 	}
 
 	/* make sure to inherit the size from the underlying device */
-	blk_queue_logical_block_size(qtarget, queue_physical_block_size(qdev));
-	blk_queue_max_hw_sectors(qtarget, queue_max_hw_sectors(qdev));
+	blk_queue_logical_block_size(tqueue, queue_physical_block_size(bqueue));
+	blk_queue_max_hw_sectors(tqueue, queue_max_hw_sectors(bqueue));
 
 	pr_info("nvm: rrpc initialized with %u luns and %llu pages.\n",
 			rrpc->nr_luns, (unsigned long long)rrpc->nr_pages);
