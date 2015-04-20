@@ -83,7 +83,9 @@ struct bio {
 		struct bio_integrity_payload *bi_integrity; /* data integrity */
 #endif
 	};
-
+#if defined(CONFIG_NVM)
+	struct bio_nvm_payload *bi_nvm; /* open-channel ssd backend */
+#endif
 	unsigned short		bi_vcnt;	/* how many bio_vec's */
 
 	/*
