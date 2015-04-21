@@ -611,12 +611,12 @@ static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 	sector_t l_addr = nvm_get_laddr(rq);
 
 	if (rrpc_lock_rq(rrpc, rq))
-		return NVM_PREP_BUSY;
+		return NVM_PREP_REQUEUE;
 
 	p = rrpc_lookup_ltop(rrpc, l_addr);
 	if (!p) {
 		rrpc_unlock_rq(rrpc, rq);
-		return NVM_PREP_BUSY;
+		return NVM_PREP_REQUEUE;
 	}
 
 	if (p->block)
