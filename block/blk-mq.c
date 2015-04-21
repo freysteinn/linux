@@ -222,6 +222,9 @@ static void blk_mq_rq_ctx_init(struct request_queue *q, struct blk_mq_ctx *ctx,
 	rq->end_io_data = NULL;
 	rq->next_rq = NULL;
 
+#ifdef CONFIG_NVM
+	rq->phys_sector = 0;
+#endif
 	ctx->rq_dispatched[rw_is_sync(rw_flags)]++;
 }
 
