@@ -135,9 +135,11 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_id_ns) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_lba_range_type) != 64);
 	BUILD_BUG_ON(sizeof(struct nvme_smart_log) != 512);
-	BUILD_BUG_ON(sizeof(struct nvme_lnvm_hb_write_command) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_lnvm_l2ptbl_command) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_lnvm_bbtbl_command) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_nvm_hb_write) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_nvm_l2ptbl) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_nvm_bbtbl) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_nvm_set_resp) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_nvm_erase_blk) != 64);
 }
 
 typedef void (*nvme_completion_fn)(struct nvme_queue *, void *,
@@ -1781,9 +1783,9 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	case nvme_cmd_compare:
 		iod = nvme_map_user_pages(dev, io.opcode & 1, io.addr, length);
 		break;
-	case lnvm_admin_identify:
-	case lnvm_admin_get_features:
-	case lnvm_admin_set_responsibility:
+	case nvme_nvm_admin_identify:
+	case nvme_nvm_admin_get_features:
+	case nvme_nvm_admin_set_resp:
 		return nvme_nvm_submit_io(ns, &io);
 	default:
 		return -EINVAL;

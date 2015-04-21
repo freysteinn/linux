@@ -85,7 +85,7 @@ struct nvme_id_ctrl {
 	__u8			vs[1024];
 };
 
-struct nvme_lnvm_id_chnl {
+struct nvme_nvm_id_chnl {
 	__le64			laddr_begin;
 	__le64			laddr_end;
 	__le32			oob_size;
@@ -103,16 +103,16 @@ struct nvme_lnvm_id_chnl {
 	__u8			reserved[133];
 } __attribute__((packed));
 
-struct nvme_lnvm_id {
+struct nvme_nvm_id {
 	__u8				ver_id;
 	__u8				nvm_type;
 	__le16				nchannels;
 	__u8				reserved[252];
-	struct nvme_lnvm_id_chnl	chnls[];
+	struct nvme_nvm_id_chnl	chnls[];
 } __attribute__((packed));
 
-#define NVME_LNVM_CHNLS_PR_REQ ((4096U - sizeof(struct nvme_lnvm_id)) \
-					/ sizeof(struct nvme_lnvm_id_chnl))
+#define NVME_NVM_CHNLS_PR_REQ ((4096U - sizeof(struct nvme_nvm_id)) \
+					/ sizeof(struct nvme_nvm_id_chnl))
 
 enum {
 	NVME_CTRL_ONCS_COMPARE			= 1 << 0,
@@ -259,14 +259,12 @@ enum nvme_opcode {
 	nvme_cmd_resv_report	= 0x0e,
 	nvme_cmd_resv_acquire	= 0x11,
 	nvme_cmd_resv_release	= 0x15,
-};
 
-enum lnvme_opcode {
-	lnvm_cmd_hybrid_write	= 0x81,
-	lnvm_cmd_hybrid_read	= 0x02,
-	lnvm_cmd_phys_write	= 0x91,
-	lnvm_cmd_phys_read	= 0x92,
-	lnvm_cmd_erase_sync	= 0x90,
+	nvme_nvm_cmd_hb_write	= 0x81,
+	nvme_nvm_cmd_hb_read	= 0x02,
+	nvme_nvm_cmd_phys_write	= 0x91,
+	nvme_nvm_cmd_phys_read	= 0x92,
+	nvme_nvm_cmd_erase	= 0x90,
 };
 
 struct nvme_common_command {
@@ -299,7 +297,7 @@ struct nvme_rw_command {
 	__le16			appmask;
 };
 
-struct nvme_lnvm_hb_write_command {
+struct nvme_nvm_hb_write {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -315,7 +313,7 @@ struct nvme_lnvm_hb_write_command {
 	__le64			phys_addr;
 };
 
-struct nvme_lnvm_l2ptbl_command {
+struct nvme_nvm_l2ptbl {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -329,7 +327,7 @@ struct nvme_lnvm_l2ptbl_command {
 	__le16			cdw14[5];
 };
 
-struct nvme_lnvm_bbtbl_command {
+struct nvme_nvm_bbtbl {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -343,7 +341,7 @@ struct nvme_lnvm_bbtbl_command {
 	__u32			rsvd11[3];
 };
 
-struct nvme_lnvm_set_resp_command {
+struct nvme_nvm_set_resp {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -355,7 +353,7 @@ struct nvme_lnvm_set_resp_command {
 	__u32			rsvd11[4];
 };
 
-struct nvme_lnvm_erase_block {
+struct nvme_nvm_erase_blk {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -435,12 +433,12 @@ enum nvme_admin_opcode {
 	nvme_admin_security_send	= 0x81,
 	nvme_admin_security_recv	= 0x82,
 
-	lnvm_admin_identify		= 0xe2,
-	lnvm_admin_get_features		= 0xe6,
-	lnvm_admin_set_responsibility	= 0xe5,
-	lnvm_admin_get_l2p_tbl		= 0xea,
-	lnvm_admin_get_bb_tbl		= 0xf2,
-	lnvm_admin_set_bb_tbl		= 0xf1,
+	nvme_nvm_admin_identify		= 0xe2,
+	nvme_nvm_admin_get_features	= 0xe6,
+	nvme_nvm_admin_set_resp		= 0xe5,
+	nvme_nvm_admin_get_l2p_tbl	= 0xea,
+	nvme_nvm_admin_get_bb_tbl	= 0xf2,
+	nvme_nvm_admin_set_bb_tbl	= 0xf1,
 };
 
 enum {
@@ -570,7 +568,7 @@ struct nvme_format_cmd {
 	__u32			rsvd11[5];
 };
 
-struct nvme_lnvm_identify {
+struct nvme_nvm_identify {
 	__u8			opcode;
 	__u8			flags;
 	__u16			command_id;
@@ -595,13 +593,13 @@ struct nvme_command {
 		struct nvme_format_cmd format;
 		struct nvme_dsm_cmd dsm;
 		struct nvme_abort_cmd abort;
-		struct nvme_lnvm_identify lnvm_identify;
-		struct nvme_lnvm_hb_write_command lnvm_hb_w;
-		struct nvme_lnvm_l2ptbl_command lnvm_l2p;
-		struct nvme_lnvm_bbtbl_command lnvm_get_bb;
-		struct nvme_lnvm_bbtbl_command lnvm_set_bb;
-		struct nvme_lnvm_set_resp_command lnvm_resp;
-		struct nvme_lnvm_erase_block lnvm_erase;
+		struct nvme_nvm_identify nvm_identify;
+		struct nvme_nvm_hb_write nvm_hb_w;
+		struct nvme_nvm_l2ptbl nvm_l2p;
+		struct nvme_nvm_bbtbl nvm_get_bb;
+		struct nvme_nvm_bbtbl nvm_set_bb;
+		struct nvme_nvm_set_resp nvm_resp;
+		struct nvme_nvm_erase_blk nvm_erase;
 	};
 };
 

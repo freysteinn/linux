@@ -1,5 +1,5 @@
 /*
- * nvme-lightnvm.c - LightNVM NVME device
+ * nvme-lightnvm.c - LightNVM NVMe device
  *
  * Copyright (C) 2015 IT University of Copenhagen
  * Initial release:
@@ -33,7 +33,7 @@ static int nvme_nvm_identify_cmd(struct nvme_dev *dev, u32 chnl_off,
 	struct nvme_command c;
 
 	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_identify;
+	c.common.opcode = nvme_nvm_admin_identify;
 	c.common.nsid = cpu_to_le32(chnl_off);
 	c.common.prp1 = cpu_to_le64(dma_addr);
 
@@ -46,22 +46,21 @@ static int nvme_nvm_get_features_cmd(struct nvme_dev *dev, unsigned nsid,
 	struct nvme_command c;
 
 	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_get_features;
+	c.common.opcode = nvme_nvm_admin_get_features;
 	c.common.nsid = cpu_to_le32(nsid);
 	c.common.prp1 = cpu_to_le64(dma_addr);
 
 	return nvme_submit_admin_cmd(dev, &c, NULL);
 }
 
-static int nvme_nvm_set_responsibility_cmd(struct nvme_dev *dev, unsigned nsid,
-								u64 resp)
+static int nvme_nvm_set_resp_cmd(struct nvme_dev *dev, unsigned nsid, u64 resp)
 {
 	struct nvme_command c;
 
 	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_set_responsibility;
-	c.common.nsid = cpu_to_le32(nsid);
-	c.lnvm_resp.resp = cpu_to_le64(resp);
+	c.nvm_resp.opcode = nvme_nvm_admin_set_resp;
+	c.nvm_resp.nsid = cpu_to_le32(nsid);
+	c.nvm_resp.resp = cpu_to_le64(resp);
 
 	return nvme_submit_admin_cmd(dev, &c, NULL);
 }
@@ -72,20 +71,18 @@ static int nvme_nvm_get_l2p_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u64 slb
 	struct nvme_command c;
 	unsigned length;
 
-	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_get_l2p_tbl;
-	c.common.nsid = cpu_to_le32(nsid);
-
-	c.lnvm_l2p.slba = cpu_to_le64(slba);
-	c.lnvm_l2p.nlb = cpu_to_le32(nlb);
-	c.lnvm_l2p.prp1_len = cpu_to_le16(dma_npages);
-
 	length = nvme_setup_prps(dev, iod, iod->length, GFP_KERNEL);
 	if ((length >> 12) != dma_npages)
 		return -ENOMEM;
 
-	c.common.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
-	c.common.prp2 = cpu_to_le64(iod->first_dma);
+	memset(&c, 0, sizeof(c));
+	c.nvm_l2p.opcode = nvme_nvm_admin_get_l2p_tbl;
+	c.nvm_l2p.nsid = cpu_to_le32(nsid);
+	c.nvm_l2p.slba = cpu_to_le64(slba);
+	c.nvm_l2p.nlb = cpu_to_le32(nlb);
+	c.nvm_l2p.prp1_len = cpu_to_le16(dma_npages);
+	c.nvm_l2p.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	c.nvm_l2p.prp2 = cpu_to_le64(iod->first_dma);
 
 	return nvme_submit_admin_cmd(dev, &c, NULL);
 }
@@ -97,45 +94,43 @@ static int nvme_nvm_get_bb_tbl_cmd(struct nvme_dev *dev, unsigned nsid, u32 lbb,
 	unsigned length;
 
 	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_admin_get_bb_tbl;
-	c.common.nsid = cpu_to_le32(nsid);
-
-	c.lnvm_get_bb.lbb = cpu_to_le32(lbb);
+	c.nvm_get_bb.opcode = nvme_nvm_admin_get_bb_tbl;
+	c.nvm_get_bb.nsid = cpu_to_le32(nsid);
+	c.nvm_get_bb.lbb = cpu_to_le32(lbb);
 
 	length = nvme_setup_prps(dev, iod, iod->length, GFP_KERNEL);
-	c.lnvm_get_bb.prp1_len = cpu_to_le32(length);
 
-	c.common.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
-	c.common.prp2 = cpu_to_le64(iod->first_dma);
+	c.nvm_get_bb.prp1_len = cpu_to_le32(length);
+	c.nvm_get_bb.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	c.nvm_get_bb.prp2 = cpu_to_le64(iod->first_dma);
 
 	return nvme_submit_admin_cmd(dev, &c, NULL);
 }
 
-static int nvme_nvm_erase_block_cmd(struct nvme_dev *dev, struct nvme_ns *ns,
+static int nvme_nvm_erase_blk_cmd(struct nvme_dev *dev, struct nvme_ns *ns,
 						sector_t block_id)
 {
 	struct nvme_command c;
 	int nsid = ns->ns_id;
-	int res;
 
 	memset(&c, 0, sizeof(c));
-	c.common.opcode = lnvm_cmd_erase_sync;
-	c.common.nsid = cpu_to_le32(nsid);
-	c.lnvm_erase.blk_addr = cpu_to_le64(block_id);
+	c.nvm_erase.opcode = nvme_nvm_cmd_erase;
+	c.nvm_erase.nsid = cpu_to_le32(nsid);
+	c.nvm_erase.blk_addr = cpu_to_le64(block_id);
 
-	return nvme_submit_io_cmd(dev, ns, &c, &res);
+	return nvme_submit_io_cmd(dev, ns, &c, NULL);
 }
 
 static int init_chnls(struct nvme_dev *dev, struct nvm_id *nvm_id,
-			struct nvme_lnvm_id *dma_buf, dma_addr_t dma_addr)
+			struct nvme_nvm_id *dma_buf, dma_addr_t dma_addr)
 {
-	struct nvme_lnvm_id_chnl *src = dma_buf->chnls;
+	struct nvme_nvm_id_chnl *src = dma_buf->chnls;
 	struct nvm_id_chnl *dst = nvm_id->chnls;
 	unsigned int len = nvm_id->nchannels;
 	int i, end, off = 0;
 
 	while (len) {
-		end = min_t(u32, NVME_LNVM_CHNLS_PR_REQ, len);
+		end = min_t(u32, NVME_NVM_CHNLS_PR_REQ, len);
 
 		for (i = 0; i < end; i++, dst++, src++) {
 			dst->laddr_begin = le64_to_cpu(src->laddr_begin);
@@ -167,7 +162,7 @@ static int init_chnls(struct nvme_dev *dev, struct nvm_id *nvm_id,
 	return 0;
 }
 
-struct nvme_iod *nvme_get_dma_iod(struct nvme_dev *dev, void *buf,
+static struct nvme_iod *nvme_get_dma_iod(struct nvme_dev *dev, void *buf,
 								unsigned length)
 {
 	struct scatterlist *sg;
@@ -196,7 +191,7 @@ static int nvme_nvm_identify(struct request_queue *q, struct nvm_id *nvm_id)
 	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 	struct pci_dev *pdev = dev->pci_dev;
-	struct nvme_lnvm_id *ctrl;
+	struct nvme_nvm_id *ctrl;
 	dma_addr_t dma_addr;
 	unsigned int ret;
 
@@ -258,12 +253,12 @@ finish:
 	return ret;
 }
 
-static int nvme_nvm_set_responsibility(struct request_queue *q, u64 resp)
+static int nvme_nvm_set_resp(struct request_queue *q, u64 resp)
 {
 	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 
-	return nvme_nvm_set_responsibility_cmd(dev, ns->ns_id, resp);
+	return nvme_nvm_set_resp_cmd(dev, ns->ns_id, resp);
 }
 
 static int nvme_nvm_get_l2p_tbl(struct request_queue *q, u64 slba, u64 nlb,
@@ -380,13 +375,13 @@ static int nvme_nvm_erase_block(struct request_queue *q, sector_t block_id)
 	struct nvme_ns *ns = q->queuedata;
 	struct nvme_dev *dev = ns->dev;
 
-	return nvme_nvm_erase_block_cmd(dev, ns, block_id);
+	return nvme_nvm_erase_blk_cmd(dev, ns, block_id);
 }
 
 static struct nvm_dev_ops nvme_nvm_dev_ops = {
 	.identify		= nvme_nvm_identify,
 	.get_features		= nvme_nvm_get_features,
-	.set_responsibility	= nvme_nvm_set_responsibility,
+	.set_responsibility	= nvme_nvm_set_resp,
 	.get_l2p_tbl		= nvme_nvm_get_l2p_tbl,
 	.set_bb_tbl		= nvme_nvm_set_bb_tbl,
 	.get_bb_tbl		= nvme_nvm_get_bb_tbl,
@@ -429,17 +424,17 @@ inline void nvme_nvm_prepare_iod_command(struct nvme_command *cmnd,
 		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
 		u16 control, u32 dsmgmt)
 {
-	cmnd->lnvm_hb_w.opcode = (rq_data_dir(req) ?
-				lnvm_cmd_hybrid_write : lnvm_cmd_hybrid_read);
-	cmnd->lnvm_hb_w.command_id = req->tag;
-	cmnd->lnvm_hb_w.nsid = cpu_to_le32(ns->ns_id);
-	cmnd->lnvm_hb_w.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
-	cmnd->lnvm_hb_w.prp2 = cpu_to_le64(iod->first_dma);
-	cmnd->lnvm_hb_w.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
-	cmnd->lnvm_hb_w.length = cpu_to_le16(
+	cmnd->nvm_hb_w.opcode = (rq_data_dir(req) ?
+				nvme_nvm_cmd_hb_write : nvme_nvm_cmd_hb_read);
+	cmnd->nvm_hb_w.command_id = req->tag;
+	cmnd->nvm_hb_w.nsid = cpu_to_le32(ns->ns_id);
+	cmnd->nvm_hb_w.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	cmnd->nvm_hb_w.prp2 = cpu_to_le64(iod->first_dma);
+	cmnd->nvm_hb_w.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
+	cmnd->nvm_hb_w.length = cpu_to_le16(
 			(blk_rq_bytes(req) >> ns->lba_shift) - 1);
-	cmnd->lnvm_hb_w.control = cpu_to_le16(control);
-	cmnd->lnvm_hb_w.dsmgmt = cpu_to_le32(dsmgmt);
-	cmnd->lnvm_hb_w.phys_addr =
+	cmnd->nvm_hb_w.control = cpu_to_le16(control);
+	cmnd->nvm_hb_w.dsmgmt = cpu_to_le32(dsmgmt);
+	cmnd->nvm_hb_w.phys_addr =
 			cpu_to_le64(nvme_block_nr(ns, req->phys_sector));
 }
