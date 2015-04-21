@@ -180,7 +180,7 @@ static inline int rrpc_lock_rq(struct rrpc *rrpc, struct request *rq)
 	unsigned int pages = blk_rq_bytes(rq) / EXPOSED_PAGE_SIZE;
 	struct rrpc_inflight_rq *r = rrpc_get_inflight_rq(rq);
 
-	if (rq->cmd_flags & REQ_NVM_NO_INFLIGHT)
+	if (rq->cmd_flags & REQ_NVM_GC)
 		return 0;
 
 	return rrpc_lock_laddr(rrpc, laddr, pages, r);
@@ -206,7 +206,7 @@ static inline void rrpc_unlock_rq(struct rrpc *rrpc, struct request *rq)
 
 	BUG_ON((laddr + pages) > rrpc->nr_pages);
 
-	if (rq->cmd_flags & REQ_NVM_NO_INFLIGHT)
+	if (rq->cmd_flags & REQ_NVM_GC)
 		return;
 
 	rrpc_unlock_laddr(rrpc, laddr, r);

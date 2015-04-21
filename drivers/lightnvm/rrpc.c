@@ -231,7 +231,7 @@ try:
 
 		/* Perform read to do GC */
 		bio->bi_iter.bi_sector = nvm_get_sector(rev->addr);
-		bio->bi_rw |= (READ | REQ_NVM_NO_INFLIGHT);
+		bio->bi_rw |= (READ | REQ_NVM_GC);
 		bio->bi_private = &wait;
 		bio->bi_end_io = rrpc_end_sync_bio;
 		bio->bi_nvm = &rrpc->instance.payload;
@@ -248,7 +248,7 @@ try:
 		reinit_completion(&wait);
 
 		bio->bi_iter.bi_sector = nvm_get_sector(rev->addr);
-		bio->bi_rw |= (WRITE | REQ_NVM_NO_INFLIGHT);
+		bio->bi_rw |= (WRITE | REQ_NVM_GC);
 		bio->bi_private = &wait;
 		bio->bi_end_io = rrpc_end_sync_bio;
 		bio->bi_nvm = &rrpc->instance.payload;
@@ -641,7 +641,7 @@ static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
 	int is_gc = 0;
 	sector_t l_addr = nvm_get_laddr(rq);
 
-	if (rq->cmd_flags & REQ_NVM_NO_INFLIGHT)
+	if (rq->cmd_flags & REQ_NVM_GC)
 		is_gc = 1;
 
 	if (rrpc_lock_rq(rrpc, rq))
