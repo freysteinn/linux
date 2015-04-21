@@ -670,14 +670,9 @@ static int rrpc_prep_rq(struct request *rq, void *private)
 	int ret;
 
 	if (rw == WRITE)
-		ret = rrpc_write_rq(rrpc, rq);
-	else
-		ret = rrpc_read_rq(rrpc, rq);
+		return rrpc_write_rq(rrpc, rq);
 
-	if (!ret)
-		rq->cmd_flags |= REQ_DONTPREP;
-
-	return ret;
+	return rrpc_read_rq(rrpc, rq);
 }
 
 static void rrpc_make_rq(struct request_queue *q, struct bio *bio)
