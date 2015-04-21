@@ -770,6 +770,7 @@ static void nvme_submit_flush(struct nvme_queue *nvmeq, struct nvme_ns *ns,
 static int nvme_nvm_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 							struct nvme_ns *ns)
 {
+#ifdef CONFIG_NVM
 	struct request *req = iod_get_private(iod);
 	struct nvme_command *cmnd;
 	u16 control = 0;
@@ -800,6 +801,7 @@ static int nvme_nvm_submit_iod(struct nvme_queue *nvmeq, struct nvme_iod *iod,
 	if (++nvmeq->sq_tail == nvmeq->q_depth)
 		nvmeq->sq_tail = 0;
 	writel(nvmeq->sq_tail, nvmeq->q_db);
+#endif /* CONFIG_NVM */
 
 	return 0;
 }
@@ -961,7 +963,6 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	nvme_process_cq(nvmeq);
 	spin_unlock_irq(&nvmeq->q_lock);
-
 	return BLK_MQ_RQ_QUEUE_OK;
 
  done_cmd:
