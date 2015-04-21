@@ -667,7 +667,6 @@ static int rrpc_prep_rq(struct request *rq, void *private)
 {
 	struct rrpc *rrpc = private;
 	int rw = rq_data_dir(rq);
-	int ret;
 
 	if (rw == WRITE)
 		return rrpc_write_rq(rrpc, rq);
