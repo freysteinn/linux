@@ -1,6 +1,14 @@
 #ifndef NVM_H
 #define NVM_H
 
+enum {
+	NVM_PREP_OK = 0,
+	NVM_PREP_BUSY = 1,
+	NVM_PREP_REQUEUE = 2,
+	NVM_PREP_DONE = 3,
+	NVM_PREP_ERROR = 4,
+};
+
 #ifdef CONFIG_NVM
 
 #include <linux/blkdev.h>
@@ -12,14 +20,6 @@ struct nvm_target {
 	struct list_head list;
 	struct nvm_target_type *type;
 	struct gendisk *disk;
-};
-
-enum {
-	NVM_PREP_OK = 0,
-	NVM_PREP_BUSY = 1,
-	NVM_PREP_REQUEUE = 2,
-	NVM_PREP_DONE = 3,
-	NVM_PREP_ERROR = 4,
 };
 
 extern void nvm_unregister(struct gendisk *);
