@@ -935,9 +935,13 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	if (ns->type == NVME_NS_NVM) {
 		switch (nvm_prep_rq(req)) {
-		case BLK_MQ_RQ_QUEUE_BUSY:
+		case NVM_PREP_BUSY:
 			goto retry_cmd;
-		case BLK_MQ_RQ_QUEUE_ERROR:
+		case NVM_PREP_REQUEUE:
+			blk_mq_requeue_request(req);
+			blk_mq_kick_requeue_list(hctx->queue);
+			goto done_cmd;
+		case NVM_PREP_ERROR:
 			goto error_cmd;
 		}
 	}
@@ -955,6 +959,7 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	nvme_process_cq(nvmeq);
 	spin_unlock_irq(&nvmeq->q_lock);
+ done_cmd:
 	return BLK_MQ_RQ_QUEUE_OK;
 
  error_cmd:
