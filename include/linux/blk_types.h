@@ -195,8 +195,7 @@ enum rq_flag_bits {
 	__REQ_HASHED,		/* on IO scheduler merge hash */
 	__REQ_MQ_INFLIGHT,	/* track inflight for MQ */
 	__REQ_NO_TIMEOUT,	/* requests may never expire */
-	__REQ_NVM_MAPPED,	/* NVM mapped this request */
-	__REQ_NVM_NO_INFLIGHT,	/* request should not use inflight protection */
+	__REQ_NVM_GC,		/* request is a nvm gc request */
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -217,7 +216,7 @@ enum rq_flag_bits {
 #define REQ_COMMON_MASK \
 	(REQ_WRITE | REQ_FAILFAST_MASK | REQ_SYNC | REQ_META | REQ_PRIO | \
 	 REQ_DISCARD | REQ_WRITE_SAME | REQ_NOIDLE | REQ_FLUSH | REQ_FUA | \
-	 REQ_SECURE | REQ_INTEGRITY | REQ_NVM_NO_INFLIGHT)
+	 REQ_SECURE | REQ_INTEGRITY | REQ_NVM_GC)
 #define REQ_CLONE_MASK		REQ_COMMON_MASK
 
 #define BIO_NO_ADVANCE_ITER_MASK	(REQ_DISCARD|REQ_WRITE_SAME)
@@ -251,6 +250,5 @@ enum rq_flag_bits {
 #define REQ_HASHED		(1ULL << __REQ_HASHED)
 #define REQ_MQ_INFLIGHT		(1ULL << __REQ_MQ_INFLIGHT)
 #define REQ_NO_TIMEOUT		(1ULL << __REQ_NO_TIMEOUT)
-#define REQ_NVM_MAPPED		(1ULL << __REQ_NVM_MAPPED)
-#define REQ_NVM_NO_INFLIGHT	(1ULL << __REQ_NVM_NO_INFLIGHT)
+#define REQ_NVM_GC		(1ULL << __REQ_NVM_GC)
 #endif /* __LINUX_BLK_TYPES_H */
