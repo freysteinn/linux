@@ -604,13 +604,6 @@ static struct nvm_addr *rrpc_lookup_ltop(struct rrpc *rrpc, sector_t laddr)
 	return p;
 }
 
-static int rrpc_requeue_and_kick(struct rrpc *rrpc, struct request *rq)
-{
-	blk_mq_requeue_request(rq);
-	blk_mq_kick_requeue_list(rrpc->q_dev);
-	return BLK_MQ_RQ_QUEUE_OK;
-}
-
 static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 {
 	struct nvm_addr *p;
@@ -618,12 +611,12 @@ static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 	sector_t l_addr = nvm_get_laddr(rq);
 
 	if (rrpc_lock_rq(rrpc, rq))
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return NVM_PREP_BUSY;
 
 	p = rrpc_lookup_ltop(rrpc, l_addr);
 	if (!p) {
 		rrpc_unlock_rq(rrpc, rq);
-		return BLK_MQ_RQ_QUEUE_BUSY;
+		return NVM_PREP_BUSY;
 	}
 
 	if (p->block)
@@ -632,13 +625,13 @@ static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 	else {
 		rrpc_unlock_rq(rrpc, rq);
 		blk_mq_end_request(rq, 0);
-		return BLK_MQ_RQ_QUEUE_OK;
+		return NVM_PREP_OK;
 	}
 
 	pb = get_per_rq_data(rq);
 	pb->addr = p;
 
-	return BLK_MQ_RQ_QUEUE_OK;
+	return NVM_PREP_OK;
 }
 
 static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
@@ -652,14 +645,14 @@ static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
 		is_gc = 1;
 
 	if (rrpc_lock_rq(rrpc, rq))
-		return rrpc_requeue_and_kick(rrpc, rq);
+		return NVM_PREP_REQUEUE;
 
 	p = rrpc_map_page(rrpc, l_addr, is_gc);
 	if (!p) {
 		BUG_ON(is_gc);
 		rrpc_unlock_rq(rrpc, rq);
 		rrpc_gc_kick(rrpc);
-		return rrpc_requeue_and_kick(rrpc, rq);
+		return NVM_PREP_REQUEUE;
 	}
 
 	rq->phys_sector = nvm_get_sector(p->addr);
@@ -667,7 +660,7 @@ static int rrpc_write_rq(struct rrpc *rrpc, struct request *rq)
 	pb = get_per_rq_data(rq);
 	pb->addr = p;
 
-	return BLK_MQ_RQ_QUEUE_OK;
+	return NVM_PREP_OK;
 }
 
 static int rrpc_prep_rq(struct request *rq, void *private)
@@ -682,7 +675,7 @@ static int rrpc_prep_rq(struct request *rq, void *private)
 		ret = rrpc_read_rq(rrpc, rq);
 
 	if (!ret)
-		rq->cmd_flags |= (REQ_NVM_MAPPED|REQ_DONTPREP);
+		rq->cmd_flags |= REQ_DONTPREP;
 
 	return ret;
 }
