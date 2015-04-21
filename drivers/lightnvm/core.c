@@ -701,7 +701,7 @@ int nvm_attach_sysfs(struct gendisk *disk)
 	if (!disk->nvm)
 		return 0;
 
-	ret = sysfs_create_group(&dev->kobj, &nvm_attribute_group);
+	ret = sysfs_update_group(&dev->kobj, &nvm_attribute_group);
 	if (ret)
 		return ret;
 
@@ -796,8 +796,7 @@ void nvm_unprep_rq(struct request *rq)
 	if (unlikely(!bio))
 		return;
 
-
-	if (!(rq->cmd_flags & REQ_NVM_MAPPED))
+	if (!rq->phys_sector)
 		return;
 
 	ins = container_of(bio->bi_nvm, struct nvm_target_instance, payload);
