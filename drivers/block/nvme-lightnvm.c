@@ -27,6 +27,8 @@
 #include <linux/blk-mq.h>
 #include <linux/lightnvm.h>
 
+#ifdef CONFIG_NVM
+
 static int nvme_nvm_identify_cmd(struct nvme_dev *dev, u32 chnl_off,
 							dma_addr_t dma_addr)
 {
@@ -388,6 +390,34 @@ static struct nvm_dev_ops nvme_nvm_dev_ops = {
 	.erase_block		= nvme_nvm_erase_block,
 };
 
+inline void nvme_nvm_prepare_iod_command(struct nvme_command *cmnd,
+		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
+		u16 control, u32 dsmgmt)
+{
+	cmnd->nvm_hb_w.opcode = (rq_data_dir(req) ?
+				nvme_nvm_cmd_hb_write : nvme_nvm_cmd_hb_read);
+	cmnd->nvm_hb_w.command_id = req->tag;
+	cmnd->nvm_hb_w.nsid = cpu_to_le32(ns->ns_id);
+	cmnd->nvm_hb_w.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
+	cmnd->nvm_hb_w.prp2 = cpu_to_le64(iod->first_dma);
+	cmnd->nvm_hb_w.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
+	cmnd->nvm_hb_w.length = cpu_to_le16(
+			(blk_rq_bytes(req) >> ns->lba_shift) - 1);
+	cmnd->nvm_hb_w.control = cpu_to_le16(control);
+	cmnd->nvm_hb_w.dsmgmt = cpu_to_le32(dsmgmt);
+	cmnd->nvm_hb_w.phys_addr =
+			cpu_to_le64(nvme_block_nr(ns, req->phys_sector));
+}
+#else
+static struct nvm_dev_ops nvme_nvm_dev_ops;
+
+inline void nvme_nvm_prepare_iod_command(struct nvme_command *cmnd,
+		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
+		u16 control, u32 dsmgmt)
+{
+}
+#endif /* CONFIG_NVM */
+
 int nvme_nvm_submit_io(struct nvme_ns *ns, struct nvme_user_io *io)
 {
 	struct nvme_command c;
@@ -420,21 +450,3 @@ int nvme_nvm_register(struct gendisk *disk, const struct device *dev)
 	return ret;
 }
 
-inline void nvme_nvm_prepare_iod_command(struct nvme_command *cmnd,
-		struct request *req, struct nvme_iod *iod, struct nvme_ns *ns,
-		u16 control, u32 dsmgmt)
-{
-	cmnd->nvm_hb_w.opcode = (rq_data_dir(req) ?
-				nvme_nvm_cmd_hb_write : nvme_nvm_cmd_hb_read);
-	cmnd->nvm_hb_w.command_id = req->tag;
-	cmnd->nvm_hb_w.nsid = cpu_to_le32(ns->ns_id);
-	cmnd->nvm_hb_w.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
-	cmnd->nvm_hb_w.prp2 = cpu_to_le64(iod->first_dma);
-	cmnd->nvm_hb_w.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
-	cmnd->nvm_hb_w.length = cpu_to_le16(
-			(blk_rq_bytes(req) >> ns->lba_shift) - 1);
-	cmnd->nvm_hb_w.control = cpu_to_le16(control);
-	cmnd->nvm_hb_w.dsmgmt = cpu_to_le32(dsmgmt);
-	cmnd->nvm_hb_w.phys_addr =
-			cpu_to_le64(nvme_block_nr(ns, req->phys_sector));
-}
