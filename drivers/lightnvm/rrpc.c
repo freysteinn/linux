@@ -625,7 +625,7 @@ static int rrpc_read_rq(struct rrpc *rrpc, struct request *rq)
 	else {
 		rrpc_unlock_rq(rrpc, rq);
 		blk_mq_end_request(rq, 0);
-		return NVM_PREP_OK;
+		return NVM_PREP_DONE;
 	}
 
 	pb = get_per_rq_data(rq);
