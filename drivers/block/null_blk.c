@@ -433,11 +433,18 @@ static inline int __null_queue_rq(struct blk_mq_hw_ctx *hctx,
 static int null_queue_nvm_rq(struct blk_mq_hw_ctx *hctx,
 			 const struct blk_mq_queue_data *bd)
 {
-	int ret;
-
-	ret = nvm_prep_rq(bd->rq);
-	if (ret)
-		return ret;
+	switch (nvm_prep_rq(bd->rq)) {
+	case NVM_PREP_DONE:
+		return BLK_MQ_RQ_QUEUE_OK;
+	case NVM_PREP_REQUEUE:
+		blk_mq_requeue_request(bd->rq);
+		blk_mq_kick_requeue_list(hctx->queue);
+		return BLK_MQ_RQ_QUEUE_OK;
+	case NVM_PREP_BUSY:
+		return BLK_MQ_RQ_QUEUE_BUSY;
+	case NVM_PREP_ERROR:
+		return BLK_MQ_RQ_QUEUE_ERROR;
+	}
 
 	return __null_queue_rq(hctx, bd);
 }
