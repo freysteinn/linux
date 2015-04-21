@@ -766,7 +766,7 @@ int nvm_prep_rq(struct request *rq)
 	struct nvm_target_instance *ins;
 	struct bio *bio;
 
-	if (rq->cmd_flags & REQ_DONTPREP)
+	if (rq->phys_sector)
 		return 0;
 
 	bio = rq->bio;
@@ -792,11 +792,11 @@ void nvm_unprep_rq(struct request *rq)
 	struct nvm_target_instance *ins;
 	struct bio *bio;
 
-	bio = rq->bio;
-	if (unlikely(!bio))
+	if (!rq->phys_sector)
 		return;
 
-	if (!rq->phys_sector)
+	bio = rq->bio;
+	if (unlikely(!bio))
 		return;
 
 	ins = container_of(bio->bi_nvm, struct nvm_target_instance, payload);

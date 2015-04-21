@@ -18,7 +18,8 @@ enum {
 	NVM_PREP_OK = 0,
 	NVM_PREP_BUSY = 1,
 	NVM_PREP_REQUEUE = 2,
-	NVM_PREP_ERROR = 3,
+	NVM_PREP_DONE = 3,
+	NVM_PREP_ERROR = 4,
 };
 
 extern void nvm_unregister(struct gendisk *);
