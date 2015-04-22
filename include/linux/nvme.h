@@ -168,6 +168,8 @@ int nvme_get_features(struct nvme_dev *dev, unsigned fid, unsigned nsid,
 			dma_addr_t dma_addr, u32 *result);
 int nvme_set_features(struct nvme_dev *dev, unsigned fid, unsigned dword11,
 			dma_addr_t dma_addr, u32 *result);
+struct nvme_iod *nvme_alloc_phys_seg_iod(unsigned nseg, unsigned bytes,
+			struct nvme_dev *dev, unsigned long priv, gfp_t gfp);
 
 struct sg_io_hdr;
 
